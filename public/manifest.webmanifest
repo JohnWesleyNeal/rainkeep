@@ -1,0 +1,25 @@
+{
+  "name": "Rainkeep — a little landscape puzzle",
+  "short_name": "Rainkeep",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eeeadd",
+  "theme_color": "#eeeadd",
+  "description": "Build banks, make lakes, keep the rain.",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
