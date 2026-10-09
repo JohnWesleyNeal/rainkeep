@@ -8,7 +8,12 @@ import {
   terrainPressure,
   QUAKE_LIMIT,
 } from "./simulation.js";
-import { leakPaths, evaporationProfile } from "./atmosphere.js";
+import {
+  leakPaths,
+  evaporationProfile,
+  waterlineField,
+  bankSpills,
+} from "./atmosphere.js";
 import { createImpactFeedback } from "./feedback.js";
 import { createTokenWorkshop } from "./tokens.js";
 import { createCraters } from "./craters.js";
@@ -168,7 +173,17 @@ export function createWorldRenderer(canvas, reduced = false) {
       metalness: 0,
     }),
   );
+  const shorePixels = new Float32Array(SIZE * SIZE * 4);
+  const shoreTexture = new THREE.DataTexture(
+    shorePixels,
+    SIZE,
+    SIZE,
+    THREE.RGBAFormat,
+    THREE.FloatType,
+  );
+  shoreTexture.needsUpdate = true;
   terrain.material.onBeforeCompile = (shader) => {
+    shader.uniforms.shoreTexture = { value: shoreTexture };
     shader.vertexShader =
       "varying vec3 vGroundPosition;\n" + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace(
@@ -176,7 +191,8 @@ export function createWorldRenderer(canvas, reduced = false) {
       "#include <begin_vertex>\nvGroundPosition=position;",
     );
     shader.fragmentShader =
-      "varying vec3 vGroundPosition;\n" + shader.fragmentShader;
+      "varying vec3 vGroundPosition; uniform sampler2D shoreTexture;\n" +
+      shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <color_fragment>",
       `#include <color_fragment>
@@ -186,6 +202,13 @@ export function createWorldRenderer(canvas, reduced = false) {
       vec3 earth=mix(vec3(.33,.22,.12),vec3(.53,.39,.22),smoothstep(0.,6.,vGroundPosition.y));
       earth *= 1.-strata*.12;
       diffuseColor.rgb=mix(diffuseColor.rgb,earth,slope*.9);
+      vec4 shore=texture2D(shoreTexture,clamp((vGroundPosition.xz+vec2(16.))/32.,vec2(.001),vec2(.999)));
+      float under=(1.-smoothstep(shore.r-.08,shore.r+.04,vGroundPosition.y))*shore.g;
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.10,.26,.25),under*slope*.48);
+      float thickness=max(.075,fwidth(vGroundPosition.y)*1.25);
+      float waterline=1.-smoothstep(thickness*.3,thickness*1.4,abs(vGroundPosition.y-shore.r-.12));
+      vec3 lineColor=mix(vec3(.60,.92,.87),vec3(1.,.42,.06),smoothstep(.25,.65,shore.b));
+      diffuseColor.rgb=mix(diffuseColor.rgb,lineColor,waterline*shore.g*slope*.92);
     `,
     );
   };
@@ -258,11 +281,16 @@ export function createWorldRenderer(canvas, reduced = false) {
     new THREE.BufferAttribute(new Float32Array((SIZE + 1) ** 2), 1),
   );
   waterGeometry.setAttribute(
+    "bed",
+    new THREE.BufferAttribute(new Float32Array((SIZE + 1) ** 2), 1),
+  );
+  waterGeometry.setAttribute(
     "frozen",
     new THREE.BufferAttribute(new Float32Array((SIZE + 1) ** 2), 1),
   );
   const waterMaterial = new THREE.ShaderMaterial({
     uniforms: {
+      shoreTexture: { value: shoreTexture },
       time: { value: 0 },
       fade: { value: 1 },
       eye: { value: camera.position },
@@ -276,15 +304,16 @@ export function createWorldRenderer(canvas, reduced = false) {
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
-    vertexShader: `attribute float depth; attribute float frozen;
-      varying vec3 world; varying float amount; varying float frost;
+    vertexShader: `attribute float depth; attribute float frozen; attribute float bed;
+      varying vec3 world; varying float amount; varying float frost; varying float ground;
       void main() { world = (modelMatrix * vec4(position,1.)).xyz;
-        amount = depth; frost = frozen;
+        amount = depth; frost = frozen; ground=bed;
         gl_Position = projectionMatrix * viewMatrix * vec4(world,1.); }`,
-    fragmentShader: `uniform float time; uniform float fade; uniform vec3 eye; uniform vec4 ripples[4];
-      varying vec3 world; varying float amount; varying float frost;
+    fragmentShader: `uniform float time; uniform float fade; uniform vec3 eye; uniform vec4 ripples[4]; uniform sampler2D shoreTexture;
+      varying vec3 world; varying float amount; varying float frost; varying float ground;
       void main() {
         if (amount < .035) discard;
+        float actualDepth=max(0.,world.y-ground-.035);
         vec2 slope = vec2(cos(world.x*.81 + world.z*.47 + time*.67),
           sin(world.z*.73 - world.x*.54 - time*.53)) * .045 * (1.-frost);
         float rings = 0.;
@@ -299,22 +328,24 @@ export function createWorldRenderer(canvas, reduced = false) {
         vec3 normal=normalize(vec3(slope.x,1.,slope.y)), view=normalize(eye-world);
         vec3 reflected=reflect(-view,normal);
         float fresnel=pow(1.-max(dot(normal,view),0.),4.);
-        vec3 shallow=vec3(.06,.58,.76), middle=vec3(.008,.14,.48), deep=vec3(.018,.025,.15);
-        vec3 col=mix(shallow,middle,smoothstep(.12,1.4,amount));
-        col=mix(col,deep,smoothstep(1.4,3.7,amount));
+        vec3 shallow=vec3(.025,.64,.56), middle=vec3(.012,.19,.59), deep=vec3(.018,.025,.17);
+        vec3 col=mix(shallow,middle,smoothstep(.22,.85,actualDepth));
+        col=mix(col,deep,smoothstep(1.25,2.7,actualDepth));
         vec3 sky=mix(vec3(.12,.37,.49),vec3(.69,.87,.8),smoothstep(.05,.8,reflected.y));
-        col=mix(col,sky,.06+fresnel*.3);
+        col=mix(col,sky,.025+fresnel*.13);
         float sun=pow(max(0.,dot(reflected,normalize(vec3(-.62,.53,-.62)))),240.);
         col += vec3(1.,.89,.65)*sun*.11 + rings;
         float caustic=pow(abs(sin(world.x*1.7+sin(world.z*.9+time*.3))*sin(world.z*1.9+sin(world.x*.8-time*.2))),6.);
-        col += caustic*.014 * (1.-frost);
-        float edge=1.-smoothstep(.04,.26,amount);
-        col=mix(col,vec3(.71,.97,1.),edge*.7);
-        float contour=1.-smoothstep(.025,.09,abs(fract(amount/.7)-.5));
-        col+=vec3(.055,.09,.1)*contour*(1.-frost);
+        col += caustic*.009 * (1.-frost);
+        float edge=1.-smoothstep(.03,.24,actualDepth);
+        vec4 shore=texture2D(shoreTexture,clamp((world.xz+vec2(16.))/32.,vec2(.001),vec2(.999)));
+        vec3 edgeColor=mix(vec3(.43,.85,.79),vec3(1.,.42,.06),smoothstep(.25,.65,shore.b));
+        col=mix(col,edgeColor,edge*.88);
+        float contour=1.-smoothstep(.025,.09,abs(fract(actualDepth/.7)-.5));
+        col*=1.-contour*.065*(1.-frost);
         float crystal=pow(abs(sin(world.x*3.+world.z*2.)*sin(world.z*4.-world.x)),12.);
         col=mix(col,vec3(.51,.78,.84)+crystal*.13,frost);
-        gl_FragColor = vec4(col, smoothstep(.035,.13,amount)*.97*fade);
+        gl_FragColor = vec4(col, smoothstep(.035,.13,amount)*smoothstep(0.,.045,actualDepth)*.985*fade);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -322,6 +353,65 @@ export function createWorldRenderer(canvas, reduced = false) {
   const water = new THREE.Mesh(waterGeometry, waterMaterial);
   water.renderOrder = 2;
   scene.add(water);
+  const shorePositions = new Float32Array(SIZE * SIZE * 2 * 6 * 3),
+    shoreColors = new Float32Array(shorePositions.length);
+  const shoreGeometry = new THREE.BufferGeometry();
+  shoreGeometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(shorePositions, 3).setUsage(
+      THREE.DynamicDrawUsage,
+    ),
+  );
+  shoreGeometry.setAttribute(
+    "color",
+    new THREE.BufferAttribute(shoreColors, 3).setUsage(THREE.DynamicDrawUsage),
+  );
+  shoreGeometry.setDrawRange(0, 0);
+  const shoreRibbon = new THREE.Mesh(
+    shoreGeometry,
+    new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.92,
+      toneMapped: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  shoreRibbon.frustumCulled = false;
+  shoreRibbon.renderOrder = 5;
+  scene.add(shoreRibbon);
+  let shoreSegments = 0,
+    warmShoreSegments = 0;
+  const spillMaterial = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: { time: { value: 0 } },
+    vertexShader: `varying vec2 flowUV; void main(){flowUV=uv;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);}`,
+    fragmentShader: `uniform float time; varying vec2 flowUV;
+      void main(){float ribs=pow(.5+.5*sin(flowUV.x*18.+sin(flowUV.y*9.-time*7.)*.9),3.);
+        float running=.5+.5*sin(flowUV.y*23.+time*10.+flowUV.x*4.);
+        float edge=smoothstep(0.,.14,flowUV.x)*(1.-smoothstep(.86,1.,flowUV.x));
+        vec3 col=mix(vec3(.05,.48,.64),vec3(.72,.97,.91),ribs*.65+running*.18);
+        gl_FragColor=vec4(col,edge*(.38+ribs*.36));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const bankCurtains = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(1, 1),
+    spillMaterial,
+    48,
+  );
+  bankCurtains.count = 0;
+  bankCurtains.frustumCulled = false;
+  bankCurtains.renderOrder = 4;
+  scene.add(bankCurtains);
+  const spillBasis = new THREE.Matrix4(),
+    spillX = new THREE.Vector3(),
+    spillY = new THREE.Vector3(),
+    spillZ = new THREE.Vector3();
   let rippleIndex = 0,
     worldTime = 0;
 
@@ -586,6 +676,46 @@ export function createWorldRenderer(canvas, reduced = false) {
   const lastHoles = new Uint8Array(SIZE * SIZE);
   const peakHeat = new Float32Array(SIZE * SIZE);
   function updateLandscape(s, dt) {
+    shorePixels.set(waterlineField(s));
+    shoreTexture.needsUpdate = true;
+    const pouring = bankSpills(s);
+    bankCurtains.count = pouring.length;
+    pouring.forEach((p, n) => {
+      const x = p.from % SIZE,
+        y = Math.floor(p.from / SIZE),
+        nx = p.to % SIZE,
+        ny = Math.floor(p.to / SIZE),
+        dx = nx - x,
+        dz = ny - y;
+      const v = ny * (SIZE + 1) + nx;
+      const ground =
+        (positions[v * 3 + 1] +
+          positions[(v + 1) * 3 + 1] +
+          positions[(v + SIZE + 1) * 3 + 1] +
+          positions[(v + SIZE + 2) * 3 + 1]) /
+        4;
+      const bottom = Math.max(p.bottom, ground) + 0.06,
+        top = p.top + 0.05,
+        height = Math.max(0.1, top - bottom);
+      spillX.set(dz, 0, -dx);
+      spillY.set(-dx, height, -dz).normalize();
+      spillZ.crossVectors(spillX, spillY);
+      spillBasis.makeBasis(spillX, spillY, spillZ);
+      dummy.quaternion.setFromRotationMatrix(spillBasis);
+      dummy.position.set(
+        (x + nx) / 2 - HALF + 0.5,
+        (top + bottom) / 2,
+        (y + ny) / 2 - HALF + 0.5,
+      );
+      dummy.scale.set(
+        0.88 + Math.min(0.12, p.rate * 2),
+        Math.hypot(height, 1),
+        1,
+      );
+      dummy.updateMatrix();
+      bankCurtains.setMatrixAt(n, dummy.matrix);
+    });
+    bankCurtains.instanceMatrix.needsUpdate = true;
     peakHeat.fill(0);
     for (const { i, extra } of terrainPressure(s).spikes)
       peakHeat[i] = Math.min(1, extra / 5.6);
@@ -654,6 +784,7 @@ export function createWorldRenderer(canvas, reduced = false) {
           depth = sample(s.water, x, y),
           frozen = sample(s.ice, x, y);
         positions[v * 3 + 1] = z;
+        waterGeometry.attributes.bed.array[v] = z;
         color
           .copy(grass)
           .lerp(high, Math.min(1, Math.max(0, z) / 4))
@@ -691,7 +822,80 @@ export function createWorldRenderer(canvas, reduced = false) {
     craters.update(s, displayHeights);
     waterGeometry.attributes.position.needsUpdate = true;
     waterGeometry.attributes.depth.needsUpdate = true;
+    waterGeometry.attributes.bed.needsUpdate = true;
     waterGeometry.attributes.frozen.needsUpdate = true;
+    // Intersect the rendered bank triangles with the actual nearby water plane.
+    // A small horizontal ribbon stays visible above that intersection on phones.
+    let ribbonVertices = 0;
+    shoreSegments = 0;
+    warmShoreSegments = 0;
+    const depths = waterGeometry.attributes.depth.array;
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x < SIZE; x++) {
+        if (s.holes[y * SIZE + x]) continue;
+        const v = y * (SIZE + 1) + x;
+        for (const tri of [
+          [v, v + SIZE + 1, v + 1],
+          [v + 1, v + SIZE + 1, v + SIZE + 2],
+        ]) {
+          const wetVertices = tri.filter((i) => depths[i] > 0.08);
+          if (!wetVertices.length) continue;
+          const level =
+            wetVertices.reduce(
+              (n, i) => n + waterPositions[i * 3 + 1] - 0.035,
+              0,
+            ) / wetVertices.length;
+          const cuts = [];
+          for (let e = 0; e < 3; e++) {
+            const a = tri[e],
+              b = tri[(e + 1) % 3],
+              da = positions[a * 3 + 1] - level,
+              db = positions[b * 3 + 1] - level;
+            if (da < 0 === db < 0 || Math.abs(da - db) < 0.001) continue;
+            const f = da / (da - db);
+            cuts.push([
+              positions[a * 3] + (positions[b * 3] - positions[a * 3]) * f,
+              positions[a * 3 + 2] +
+                (positions[b * 3 + 2] - positions[a * 3 + 2]) * f,
+            ]);
+          }
+          if (cuts.length !== 2) continue;
+          const [a, b] = cuts,
+            dx = b[0] - a[0],
+            dz = b[1] - a[1],
+            length = Math.hypot(dx, dz);
+          if (length < 0.03) continue;
+          const nx = (-dz / length) * 0.13,
+            nz = (dx / length) * 0.13;
+          const risk = Math.max(
+            ...tri.map((i) => {
+              const cx = Math.min(SIZE - 1, i % (SIZE + 1)),
+                cy = Math.min(SIZE - 1, Math.floor(i / (SIZE + 1)));
+              return shorePixels[(cy * SIZE + cx) * 4 + 2];
+            }),
+          );
+          const tint = risk > 0.45 ? [1, 0.4, 0.04] : [0.66, 0.92, 0.84];
+          if (risk > 0.45) warmShoreSegments++;
+          const quad = [
+            [a[0] + nx, a[1] + nz],
+            [b[0] + nx, b[1] + nz],
+            [b[0] - nx, b[1] - nz],
+            [a[0] - nx, a[1] - nz],
+          ];
+          for (const n of [0, 1, 2, 0, 2, 3]) {
+            shorePositions.set(
+              [quad[n][0], level + 0.12, quad[n][1]],
+              ribbonVertices * 3,
+            );
+            shoreColors.set(tint, ribbonVertices * 3);
+            ribbonVertices++;
+          }
+          shoreSegments++;
+        }
+      }
+    shoreGeometry.setDrawRange(0, ribbonVertices);
+    shoreGeometry.attributes.position.needsUpdate = true;
+    shoreGeometry.attributes.color.needsUpdate = true;
     let n = 0;
     for (let side = 0; side < 4; side++)
       for (let a = 0; a < SIZE; a++) {
@@ -974,6 +1178,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     }
     targetPositions.needsUpdate = true;
     waterMaterial.uniforms.time.value = reduced ? 0 : time;
+    spillMaterial.uniforms.time.value = reduced ? 0 : time;
     const activeDucks = new Set();
     for (const lake of options.bonuses.groups.filter(
       (l) => l.duck && !l.frozen,
@@ -1187,6 +1392,15 @@ export function createWorldRenderer(canvas, reduced = false) {
         ...feedback.stats,
         leakPaths: tracedLeaks.length,
         foamBeads: leakFoam.count,
+        bankSpills: bankCurtains.count,
+        shoreSegments,
+        warmShoreSegments,
+        waterlineCells: Array.from(shorePixels).filter(
+          (v, i) => i % 4 === 1 && v > 0,
+        ).length,
+        nearFullBanks: Array.from(shorePixels).filter(
+          (v, i) => i % 4 === 2 && v > 0.5,
+        ).length,
         duckReactions: ducks
           .filter((g) => g.visible && g.userData.reaction)
           .map((g) => ({
@@ -1266,6 +1480,7 @@ function createCanvasRenderer(canvas, reduced = false) {
   }
   function render(s, aim, t, dt, o) {
     ctx.clearRect(0, 0, width, height);
+    const shore = waterlineField(s);
     const warmPeaks = new Set(terrainPressure(s).spikes.map(({ i }) => i));
     polygon(
       [
@@ -1297,6 +1512,66 @@ function createCanvasRenderer(canvas, reduced = false) {
         y = Math.floor(i / SIZE),
         h = s.holes[i] ? -0.8 : s.terrain[i],
         w = s.water[i];
+      // Front-facing bank sides make the height of the liquid line readable.
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
+        const nx = x + dx,
+          ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE || s.holes[i])
+          continue;
+        const j = ny * SIZE + nx,
+          low = s.terrain[j];
+        const A = rotate(x, y),
+          B = rotate(nx, ny);
+        if (B[0] + B[1] <= A[0] + A[1] || h <= low + 0.05) continue;
+        const a =
+          dx === 1
+            ? [x + 1, y]
+            : dx === -1
+              ? [x, y + 1]
+              : dy === 1
+                ? [x + 1, y + 1]
+                : [x, y];
+        const b =
+          dx === 1
+            ? [x + 1, y + 1]
+            : dx === -1
+              ? [x, y]
+              : dy === 1
+                ? [x, y + 1]
+                : [x + 1, y];
+        polygon(
+          [
+            project(...a, h),
+            project(...b, h),
+            project(...b, low),
+            project(...a, low),
+          ],
+          "#8f805e",
+        );
+        const level = shore[i * 4];
+        if (shore[i * 4 + 1] && level > low && level < h + 0.1) {
+          polygon(
+            [
+              project(...a, level),
+              project(...b, level),
+              project(...b, low),
+              project(...a, low),
+            ],
+            "#466e6b",
+          );
+          ctx.strokeStyle = shore[i * 4 + 2] > 0.5 ? "#ffc778" : "#baeee2";
+          ctx.lineWidth = Math.max(1, unit * 0.14);
+          ctx.beginPath();
+          ctx.moveTo(...project(...a, level));
+          ctx.lineTo(...project(...b, level));
+          ctx.stroke();
+        }
+      }
       polygon(
         [
           project(x, y, h),
@@ -1320,12 +1595,31 @@ function createCanvasRenderer(canvas, reduced = false) {
           ],
           s.ice[i] > 0
             ? "#b5e6ed"
-            : w < 0.7
-              ? "#50d9e7"
-              : w < 2
-                ? "#1788d9"
-                : "#243b91",
+            : w < 0.6
+              ? "#42cbbb"
+              : w < 1.8
+                ? "#176bc9"
+                : "#223867",
         );
+    }
+    for (const p of bankSpills(s, 24)) {
+      const x = (p.from % SIZE) + 0.5,
+        y = Math.floor(p.from / SIZE) + 0.5,
+        nx = (p.to % SIZE) + 0.5,
+        ny = Math.floor(p.to / SIZE) + 0.5;
+      const tx = (ny - y) * 0.38,
+        ty = -(nx - x) * 0.38;
+      ctx.globalAlpha = 0.7;
+      polygon(
+        [
+          project(x + tx, y + ty, p.top + 0.06),
+          project(x - tx, y - ty, p.top + 0.06),
+          project(nx - tx, ny - ty, p.bottom + 0.06),
+          project(nx + tx, ny + ty, p.bottom + 0.06),
+        ],
+        "#b7ede6",
+      );
+      ctx.globalAlpha = 1;
     }
     ctx.strokeStyle = "#d1fbff";
     ctx.fillStyle = "#eaffff";

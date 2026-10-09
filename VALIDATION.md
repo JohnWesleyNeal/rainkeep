@@ -1,5 +1,15 @@
 # Rainkeep validation
 
+## Edition 12
+
+Version 1.11.0, validated on 2026-10-09. This presentation pass makes shallow, medium and deep water distinct at the normal camera distance, shows the physical waterline on bank slopes, and turns the line amber near a local crest. Wet raised crests with downhill head gradients produce local cascades; existing edge/hole escape streams remain separate. Frozen liquid does not show a flowing-overflow warning. Flow, stage rules, water amounts and saved data are unchanged.
+
+79 Node tests pass. Four new checks cover real liquid headroom, a weak bank beside higher land, rejection of misleading shore films, frozen warnings/cascades, a closed pond versus over-bank flow, immutable simulation reads, bounded cascade counts and no row wrapping. Existing legal solutions for all twelve stages pass. The development visual suite passes 20 checks for actual shore geometry, safe versus warm contours, bank cascades, pause, phone fit, shader errors, resource reuse and cleanup on empty boards. Phone-sized screenshots were inspected for turquoise shallows, cobalt middle depths, indigo deep water, an amber near-full waterline and a spilling front bank.
+
+The compiled water suite passes 29 checks across WebGL and Canvas, including all four water scenes, phone fit, actual Fire drops removing the lake and empty-state reloads. The existing compiled gameplay suite passes 29 checks, including flow-related scoring, bomb repairs, ice, mines, earthquakes, save migration, offline reload and fallback. Twenty-one phone checks pass across seven viewports, including native swipes, pinch suppression, held-grip resizing and Help scrolling. Nine additional campaign checks pass, including a real Canvas stage win, reloads and partial goal progress. Six graphics-resilience checks pass, including actual context loss/restoration and automatic fallback. No browser rendering exceptions occurred. The release builds at approximately 683 kB JavaScript / 184 kB gzip, with the existing 22 kB CSS and 74 kB sky image. The standard Vite chunk-size warning remains. New scene geometry uses fixed buffers and at most 48 bank cascades; the tested overflowing scene stays below 85 draw calls.
+
+QA fixtures establish rendering in desktop Chromium with emulated phone viewports. They do not establish physical-phone frame rate, first-time depth estimation or subjective visual acceptance. Ignored scripts and screenshots use the v12 prefix under output/playwright.
+
 ## Edition 11
 
 Version 1.10.0, validated on 2026-10-09. Twelve authored stages have fixed queues, drop budgets, distinct goals, completion/retry screens, sequential unlocks and saved best medals. Goals introduce containment, separate lakes, ducks, punctures, ice, tower control, mines, recovery and natural descent. The first seven stages wait for Drop; stages 8, 11 and 12 fall. Campaign pace and hazards stay authored. Classic and Daydream remain available, and campaign scores do not replace their personal bests.
