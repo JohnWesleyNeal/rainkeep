@@ -47,6 +47,7 @@ button:active {
   max-width: 1440px;
   margin: auto;
   padding: 0 4%;
+  touch-action: none;
 }
 .masthead {
   height: 90px;
@@ -459,7 +460,7 @@ button:active {
   width: 0;
 }
 #smart-bomb {
-  margin-top: 9px;
+  margin: 0;
   font-size: 10px;
   padding: 3px 0;
   color: #bde8d3;
@@ -528,6 +529,8 @@ footer > span:nth-child(2) {
   padding: 22px;
   z-index: 20;
   overflow-y: auto;
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior: contain;
 }
 .modal {
   max-width: 470px;
@@ -1225,5 +1228,323 @@ footer > span:nth-child(2) {
   }
   footer {
     display: none;
+  }
+}
+
+/* Mobile play occupies the visible viewport, including changing browser bars.
+   The game owns touch gestures; only the separate dialogs may scroll/zoom. */
+@media (max-width: 650px),
+  (pointer: coarse) and (max-width: 1100px) and (max-height: 700px) {
+  html,
+  body {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .app {
+    height: var(--play-height, 100dvh);
+    display: grid;
+    grid-template-rows: 46px minmax(0, 1fr);
+    gap: 8px;
+    padding: env(safe-area-inset-top) max(10px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .masthead {
+    height: auto;
+    min-height: 0;
+    gap: 8px;
+  }
+  .brand {
+    font-size: 27px;
+  }
+  .brand-mark {
+    font-size: 29px;
+  }
+  .edition,
+  footer,
+  .input-tip,
+  .spill-section p,
+  .best {
+    display: none;
+  }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .utilities {
+    gap: 4px;
+  }
+  .game-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 0;
+    min-height: 0;
+  }
+  .landscape {
+    min-height: 0;
+  }
+  .landscape > canvas {
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 0;
+  }
+  .board-topline,
+  .board-caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    min-height: 0;
+    font-size: 7px;
+  }
+  .board-topline {
+    top: 0;
+    padding: 10px 12px 0;
+  }
+  .board-caption {
+    bottom: 0;
+    padding: 0 10px 6px;
+  }
+  .view-btn {
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 10px;
+  }
+  #toast {
+    bottom: 52px;
+  }
+  .console {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: 38px auto 92px auto;
+    align-content: start;
+    gap: 6px 12px;
+    padding: 0;
+    min-height: 0;
+  }
+  .score-row {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 0;
+    border: 0;
+  }
+  #score {
+    font-size: 29px;
+    line-height: 1;
+    margin-top: 3px;
+  }
+  .eyebrow {
+    font-size: 7px;
+  }
+  .spill-section {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 0;
+    border: 0;
+  }
+  .meter-heading {
+    font-size: 8px;
+    margin-right: 32px;
+  }
+  .meter {
+    height: 5px;
+    margin: 7px 32px 0 0;
+  }
+  #leak-map {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    float: none;
+  }
+  .piece-section {
+    grid-column: 1/-1;
+    grid-row: 2;
+    padding: 0;
+  }
+  .piece-heading {
+    font-size: 7px;
+  }
+  .piece-card {
+    height: 52px;
+    margin-top: 4px;
+    padding: 0 7px;
+    border-radius: 10px;
+  }
+  .piece-card canvas {
+    width: 78px;
+    height: 50px;
+  }
+  .piece-card h2 {
+    font-size: 21px;
+    margin-bottom: 2px;
+  }
+  .piece-card p {
+    font-size: 9px;
+  }
+  #piece-symbol {
+    top: 8px;
+    right: 10px;
+    font-size: 16px;
+  }
+  .next-row {
+    margin-top: 4px;
+    font-size: 8px;
+  }
+  .descent-meter {
+    margin-top: 3px;
+    height: 2px;
+  }
+  .controls {
+    grid-column: 1/-1;
+    grid-row: 3;
+    gap: 8px;
+  }
+  .rotate-btn,
+  .drop-btn {
+    height: 92px;
+    font-size: 12px;
+  }
+  .nudge-pad {
+    flex-basis: 96px;
+    gap: 4px;
+  }
+  .nudge-pad button {
+    min-height: 44px;
+    font-size: 24px;
+  }
+  .mechanics-panel {
+    grid-column: 1/-1;
+    grid-row: 4;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 8px;
+    padding: 5px 0 0;
+    margin: 0;
+  }
+  .world-stats {
+    grid-column: 1;
+    font-size: 7px;
+    gap: 5px;
+  }
+  .world-stats b {
+    display: inline;
+    margin: 0 0 0 2px;
+    font-size: 11px;
+  }
+  .quake-heading {
+    grid-column: 1/-1;
+    margin-top: 4px;
+    font-size: 7px;
+  }
+  .quake-meter {
+    grid-column: 1/-1;
+    margin-top: 3px;
+    height: 3px;
+  }
+  #smart-bomb {
+    margin: 0;
+    min-height: 40px;
+    background: #0d344c6e;
+    border: 1px solid #d6efd33b;
+    border-radius: 20px;
+    padding: 6px 10px;
+    font-size: 9px;
+  }
+  #smart-bomb:disabled {
+    display: none;
+  }
+  .overlay {
+    padding: max(10px, env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
+  }
+  .modal {
+    max-height: calc(var(--play-height, 100dvh) - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+@media (max-width: 650px) and (max-height: 600px) {
+  .app {
+    grid-template-rows: 42px minmax(0, 1fr);
+    gap: 6px;
+  }
+  .piece-heading {
+    display: none;
+  }
+  .piece-card {
+    height: 44px;
+    margin-top: 0;
+  }
+  .piece-card canvas {
+    height: 42px;
+    width: 65px;
+  }
+  .piece-card h2 {
+    font-size: 19px;
+  }
+  .console {
+    grid-template-rows: 34px auto 92px auto;
+    gap: 5px 10px;
+  }
+}
+@media (pointer: coarse) and (min-width: 651px) and (max-width: 1100px) and (max-height: 700px) {
+  .app {
+    grid-template-rows: 42px minmax(0, 1fr);
+    gap: 6px;
+  }
+  .game-layout {
+    grid-template-columns: minmax(0, 1fr) 250px;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .console {
+    grid-template-rows: 32px 24px auto 92px auto;
+    gap: 5px;
+  }
+  .score-row,
+  .spill-section {
+    grid-column: 1/-1;
+  }
+  .spill-section {
+    grid-row: 2;
+  }
+  .piece-section {
+    grid-row: 3;
+  }
+  .piece-heading {
+    display: none;
+  }
+  .piece-card {
+    height: 44px;
+    margin-top: 0;
+  }
+  .piece-card canvas {
+    height: 42px;
+    width: 65px;
+  }
+  .controls {
+    grid-row: 4;
+  }
+  .mechanics-panel {
+    grid-row: 5;
+  }
+  .meter-heading,
+  .meter {
+    margin-right: 34px;
+  }
+  #leak-map {
+    width: 24px;
+    height: 24px;
   }
 }

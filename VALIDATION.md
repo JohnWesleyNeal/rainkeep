@@ -1,5 +1,11 @@
 # Rainkeep validation
 
+## Edition 09
+
+Version 1.8.0, validated on 2026-10-09. Phone play fits the visible viewport in portrait and landscape, including safe areas and changing browser-bar height. The game surface blocks page pan and pinch zoom; Help remains independently scrollable and zoomable. Landscape borders accept relative steering. Resizing rebases a held drag instead of cancelling it. The earned Smart bomb sits beside Turn view so it remains available on short screens.
+
+45 Node tests and the build pass. The real-touch Classic route passes 38 checks; the built release passes 29 regression checks covering two-thumb input, continuous placement, saves, hazards, offline reload, and Canvas fallback. A further 28 development phone checks and 21 built-release phone checks cover seven viewports from 320 × 480 to 1024 × 600, an earned Smart bomb, native touch swipes, pinch suppression, pointer capture and movement through a height change, and independent Help scrolling. Screenshots of portrait, short portrait, and short landscape were inspected. These are desktop Chromium touch-emulation checks; physical iOS/Android browser behavior and thumb comfort remain unproven. QA artifacts use the v9 prefix under ignored output/playwright.
+
 ## Edition 08
 
 Version 1.7.0, validated on 2026-10-09. Water uses one-, three-, and five-bubble formations with transparent shells, varied fill levels, internal sloshing and small contained splashes. Each bubble pours at its own location. Existing queued Water retains its original amount. The lake shader separates shallow, middle and deep water. Bomb holes have broken rims, illuminated shaft walls and an actual opening to the sky; arrows and the black pit tint are removed.

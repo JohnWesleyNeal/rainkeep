@@ -109,9 +109,23 @@ function soundUI() {
 soundUI();
 function resize() {
   unit = world.resize();
-  cancelSteering();
+  if (drag) {
+    drag.unit = Math.max(11, unit);
+    rebaseDrag(drag, cursor);
+  }
 }
 new ResizeObserver(resize).observe(board);
+function fitViewport() {
+  const viewport = window.visualViewport;
+  if (!viewport || Math.abs(viewport.scale - 1) < 0.01)
+    document.documentElement.style.setProperty(
+      "--play-height",
+      `${Math.round(viewport?.height ?? innerHeight)}px`,
+    );
+}
+window.addEventListener("resize", fitViewport);
+window.visualViewport?.addEventListener("resize", fitViewport);
+fitViewport();
 function render(dt) {
   world.render(state, cursor, animation, dt, {
     paused,
@@ -349,8 +363,10 @@ function cancelSteering() {
   drag = null;
   nudgeHold = null;
 }
-board.addEventListener("pointerdown", (e) => {
+const steeringSurface = board.closest(".landscape");
+steeringSurface.addEventListener("pointerdown", (e) => {
   if (
+    e.target.closest("button, a") ||
     paused ||
     state.over ||
     state.dropping ||
@@ -371,7 +387,7 @@ board.addEventListener("pointerdown", (e) => {
     );
   board.focus({ preventScroll: true });
 });
-board.addEventListener("pointermove", (e) => {
+steeringSurface.addEventListener("pointermove", (e) => {
   if (paused || state.over) return;
   if (e.pointerId === pointerId && drag) {
     if (state.dropping) {
@@ -380,10 +396,15 @@ board.addEventListener("pointermove", (e) => {
       return;
     }
     cursor = moveDrag(drag, { x: e.clientX, y: e.clientY }, state.current);
-  } else if (e.pointerType === "mouse" && !state.dropping) locate(e);
+  } else if (
+    e.pointerType === "mouse" &&
+    !state.dropping &&
+    !e.target.closest("button, a")
+  )
+    locate(e);
 });
 for (const name of ["pointerup", "pointercancel", "lostpointercapture"])
-  board.addEventListener(name, (e) => {
+  steeringSurface.addEventListener(name, (e) => {
     if (e.pointerId === pointerId) {
       pointerId = null;
       drag = null;
