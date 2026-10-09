@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import { SIZE, cells } from "./simulation.js";
+import { evaporationProfile } from "./atmosphere.js";
 
 export function createImpactFeedback(scene, camera, reduced = false) {
   const items = [],
     dummy = new THREE.Object3D();
   let lastType = "";
+  let crumbleClock = 0;
   const dropGeometry = new THREE.SphereGeometry(0.16, 10, 7);
   const debrisGeometry = new THREE.BoxGeometry(0.27, 0.22, 0.33);
   const planeGeometry = new THREE.PlaneGeometry(1, 1);
@@ -57,7 +59,7 @@ export function createImpactFeedback(scene, camera, reduced = false) {
     add(mesh, life, { ring: true, maxRadius });
   }
   function particles(event, s, origin, type, count, life) {
-    const vapor = type === "steam" || type === "smoke";
+    const vapor = type === "steam" || type === "smoke" || type === "dust";
     const mesh = new THREE.InstancedMesh(
       vapor ? planeGeometry : type === "debris" ? debrisGeometry : dropGeometry,
       new THREE.MeshBasicMaterial({
@@ -66,7 +68,11 @@ export function createImpactFeedback(scene, camera, reduced = false) {
             ? 0xfff6e5
             : type === "smoke"
               ? 0xb3aaa0
-              : colors[event.type] || colors.bomb,
+              : type === "dust"
+                ? 0xd4bf92
+                : type === "bubbles"
+                  ? 0xe2ffff
+                  : colors[event.type] || colors.bomb,
         map: vapor ? puffMap : null,
         transparent: true,
         depthWrite: false,
@@ -81,10 +87,20 @@ export function createImpactFeedback(scene, camera, reduced = false) {
       const angle = (n * Math.PI * 2) / count,
         ageDelay = vapor ? (n % 4) * 0.055 : 0;
       const position = origin.clone();
-      if ((type === "steam" || type === "splash") && indices?.length) {
+      if (
+        (type === "steam" || type === "splash" || type === "bubbles") &&
+        indices?.length
+      ) {
         const i = indices[Math.floor((n / count) * indices.length)];
         position.x = (i % SIZE) - SIZE / 2 + 0.5;
         position.z = Math.floor(i / SIZE) - SIZE / 2 + 0.5;
+        if (type === "steam" || type === "bubbles")
+          position.y =
+            (event.feedbackHeights?.[
+              Math.floor((n / count) * indices.length)
+            ] ??
+              event.contactHeight ??
+              s.terrain[i]) + 0.08;
       } else
         position.add(
           new THREE.Vector3(Math.cos(angle) * 0.35, 0, Math.sin(angle) * 0.35),
@@ -103,11 +119,13 @@ export function createImpactFeedback(scene, camera, reduced = false) {
           Math.cos(angle) * speed,
           vapor
             ? 1.7 + (n % 3) * 0.5
-            : type === "splash"
-              ? 4.3 + (n % 4) * 0.5
-              : type === "debris"
-                ? 3 + (n % 4) * 0.7
-                : 2.6,
+            : type === "bubbles"
+              ? 0.8
+              : type === "splash"
+                ? 4.3 + (n % 4) * 0.5
+                : type === "debris"
+                  ? 3 + (n % 4) * 0.7
+                  : 2.6,
           Math.sin(angle) * speed,
         ),
         size: vapor
@@ -153,14 +171,75 @@ export function createImpactFeedback(scene, camera, reduced = false) {
     } else if (type === "sun") {
       ring(origin, colors.sun, 2.6, 0.4);
       particles(event, s, origin, "embers", 18, 0.65);
-      if (event.removed > 0.1) particles(event, s, origin, "steam", 24, 1.35);
+      if (event.removed > 0.1) {
+        const profile = evaporationProfile(event);
+        particles(
+          event,
+          s,
+          origin,
+          "bubbles",
+          8 + Math.round(profile.strength * 16),
+          0.7,
+        );
+        particles(event, s, origin, "steam", profile.steam, profile.life);
+        ring(
+          origin,
+          0xffe9ab,
+          2.5 + profile.strength * 4,
+          0.6 + profile.strength * 0.5,
+        );
+      }
     } else if (type === "bomb" || type === "mine") {
       ring(origin, 0xffd096, 4.1, 0.42);
       particles({ ...event, type: "bomb" }, s, origin, "debris", 22, 0.85);
       particles(event, s, origin, "smoke", 14, 1.05);
     } else {
-      ring(origin, colors[type] || colors.raise, Math.max(2, w * 0.65), 0.38);
-      particles(event, s, origin, "debris", 12, 0.4);
+      ring(
+        origin,
+        event.repaired ? 0xc6efb2 : colors[type] || colors.raise,
+        Math.max(2, w * 0.65),
+        event.repaired ? 0.9 : 0.38,
+      );
+      particles(
+        event,
+        s,
+        origin,
+        event.repaired ? "dust" : "debris",
+        12,
+        event.repaired ? 0.85 : 0.4,
+      );
+      if (event.repairCells?.length) {
+        const positions = [];
+        for (const i of event.repairCells) {
+          const x = (i % SIZE) - SIZE / 2,
+            z = Math.floor(i / SIZE) - SIZE / 2;
+          for (const [dx, dz] of [
+            [0, 0],
+            [0, 1],
+            [1, 0],
+            [1, 0],
+            [0, 1],
+            [1, 1],
+          ])
+            positions.push(x + dx, s.terrain[i] + 0.02, z + dz);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(positions, 3),
+        );
+        const cap = new THREE.Mesh(
+          geometry,
+          new THREE.MeshBasicMaterial({
+            color: 0xb8c896,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          }),
+        );
+        cap.position.y = 0.4;
+        add(cap, 0.7, { type: "repair", settle: true, uniqueGeometry: true });
+      }
     }
     if (event.earned > 0 && (event.removed > 0.1 || event.repaired > 0)) {
       const canvas = document.createElement("canvas");
@@ -201,6 +280,7 @@ export function createImpactFeedback(scene, camera, reduced = false) {
         f.mesh.material.uniforms.fade.value = 1 - progress;
       else f.mesh.material.opacity = Math.min(1, (1 - progress) * 1.4);
       if (f.ring) f.mesh.scale.setScalar(0.2 + progress * f.maxRadius);
+      else if (f.settle) f.mesh.position.y = 0.4 * (1 - progress) ** 3;
       else if (f.score) {
         if (!paused) f.mesh.position.y += dt * 1.5;
       } else if (f.points) {
@@ -231,16 +311,57 @@ export function createImpactFeedback(scene, camera, reduced = false) {
   return {
     impact,
     render,
+    anticipate(s, pressure, dt, paused) {
+      if (reduced || paused || pressure < 0.75) {
+        if (pressure < 0.75) crumbleClock = 0;
+        return;
+      }
+      crumbleClock += dt;
+      if (crumbleClock < (pressure >= 0.9 ? 1.25 : 2.7)) return;
+      crumbleClock = 0;
+      const edge = Math.floor(s.elapsed * 7) % (SIZE * 4);
+      const x =
+        edge < SIZE
+          ? edge
+          : edge < SIZE * 2
+            ? SIZE - 1
+            : edge < SIZE * 3
+              ? SIZE * 3 - edge - 1
+              : 0;
+      const y =
+        edge < SIZE
+          ? 0
+          : edge < SIZE * 2
+            ? edge - SIZE
+            : edge < SIZE * 3
+              ? SIZE - 1
+              : SIZE * 4 - edge - 1;
+      const origin = new THREE.Vector3(
+        x - SIZE / 2 + 0.5,
+        s.terrain[y * SIZE + x] - 0.4,
+        y - SIZE / 2 + 0.5,
+      );
+      const event = { type: "bomb", targets: [] };
+      const debris = particles(event, s, origin, "debris", 5, 1.1);
+      const effect = items.find((f) => f.mesh === debris);
+      for (const p of effect.points) {
+        p.velocity.y = -0.8;
+        p.velocity.x *= 0.15;
+        p.velocity.z *= 0.15;
+        p.size = 0.55;
+      }
+      particles(event, s, origin, "dust", 7, 1.2);
+    },
     clear() {
       items.splice(0).forEach(dispose);
     },
-    ghost(mesh) {
+    ghost(mesh, life = 0.45) {
       if (reduced) {
         mesh.geometry.dispose();
         mesh.material.dispose();
         return;
       }
-      add(mesh, 0.45, { uniqueGeometry: true });
+      add(mesh, life, { uniqueGeometry: true });
     },
     get stats() {
       return {

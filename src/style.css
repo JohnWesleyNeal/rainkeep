@@ -259,7 +259,7 @@ button:active {
 #spill-bar {
   height: 100%;
   width: 0;
-  transition: width 0.25s;
+  transition: width 0.8s ease-out;
   border-radius: 10px;
 }
 .spill-section p {
@@ -1546,5 +1546,118 @@ footer > span:nth-child(2) {
   #leak-map {
     width: 24px;
     height: 24px;
+  }
+}
+
+/* A forecast lives beside the island, in the same place on every screen. */
+.seismic-display {
+  position: absolute;
+  z-index: 3;
+  top: 43px;
+  right: 14px;
+  width: 174px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  color: #edf1d9;
+  background: #163d4bcc;
+  border: 1px solid #d7efd342;
+  box-shadow: 0 3px 14px #17364722;
+  pointer-events: none;
+}
+.seismic-display .quake-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  margin: 0;
+  font-size: 8px;
+  letter-spacing: 0.15px;
+}
+.seismic-display .quake-meter {
+  position: relative;
+  height: 9px;
+  margin-top: 7px;
+  overflow: visible;
+  background: #082a39;
+  border-radius: 5px;
+}
+#quake-bar {
+  border-radius: 5px;
+  background: #a8d09b;
+  transition:
+    width 0.18s,
+    background 0.3s;
+}
+#quake-forecast {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: repeating-linear-gradient(
+    120deg,
+    #fff1b780 0 2px,
+    transparent 2px 4px
+  );
+  border-radius: 0 4px 4px 0;
+}
+#quake-marker {
+  position: absolute;
+  top: -3px;
+  height: 15px;
+  width: 3px;
+  transform: translateX(-2px);
+  background: #fff2be;
+  border-radius: 2px;
+  box-shadow: 0 0 5px #fff2be88;
+}
+.landscape[data-danger="warning"] #quake-bar {
+  background: #efba65;
+}
+.landscape[data-danger="critical"] #quake-bar,
+.landscape[data-danger="imminent"] #quake-bar {
+  background: #f27d60;
+}
+.landscape[data-danger="imminent"] .seismic-display {
+  border-color: #ffc18e;
+  box-shadow: 0 0 16px #ee8b5c66;
+}
+.landscape[data-danger="imminent"] #quake-marker {
+  background: #ffab77;
+}
+#recovery-status {
+  position: relative;
+  margin-top: 8px;
+  padding-bottom: 5px;
+  font-size: 9px;
+  color: #d5efc6;
+}
+#recovery-status::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: var(--steady, 0%);
+  background: #c6efaa;
+  transition: width 0.15s;
+}
+@media (max-width: 650px),
+  (pointer: coarse) and (max-width: 1100px) and (max-height: 700px) {
+  .seismic-display {
+    top: 36px;
+    right: 10px;
+    width: 155px;
+    padding: 7px 9px;
+  }
+  .seismic-display .quake-heading {
+    font-size: 7px;
+  }
+  .seismic-display .quake-meter {
+    height: 8px;
+    margin-top: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #quake-bar,
+  #recovery-status::after {
+    transition: none;
   }
 }

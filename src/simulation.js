@@ -228,6 +228,7 @@ export function createGame(mode = "classic", seed = Date.now() >>> 0) {
     level: 1,
     smartBombs: 0,
     quakes: 0,
+    recovery: null,
     hazards: [],
     mines: [],
     rainClock: 0,
@@ -281,6 +282,25 @@ export function footprint(p, x, y) {
 }
 export const waterTotal = (s) => s.water.reduce((a, b) => a + b, 0);
 export const landMass = (s) => s.terrain.reduce((a, b) => a + b, 0);
+// Use the same area-weighted raise, height cap, and hole-repair rule as landing.
+export function quakePressure(s, aim = s.aim) {
+  const mass = landMass(s);
+  const added =
+    s.current.type === "raise" && aim
+      ? footprint(s.current, aim.x, aim.y).reduce(
+          (n, { i, weight }) =>
+            n +
+            (s.holes[i]
+              ? 0
+              : Math.min(MAX_HEIGHT - s.terrain[i], 1.4 * weight)),
+          0,
+        )
+      : 0;
+  return {
+    current: mass / QUAKE_LIMIT,
+    projected: (mass + added) / QUAKE_LIMIT,
+  };
+}
 export const fallDuration = (s) => Math.max(2.8, 8 - (s.level - 1) * 0.55);
 export function landingHeight(s, aim) {
   return Math.max(
@@ -403,7 +423,18 @@ export function earthquake(s) {
       targets.push(i);
     }
   s.quakes++;
-  announce(s, "Earthquake! Too much land. Rebuild the banks.");
+  s.recovery = targets.length
+    ? {
+        until: s.elapsed + 45,
+        damaged: targets,
+        rebuilt: false,
+        stable: 0,
+      }
+    : null;
+  announce(
+    s,
+    "Earthquake! Rebuild damaged ground, then hold a lake for 2s. You have 45s.",
+  );
   return targets;
 }
 export function smartBomb(s) {
@@ -417,6 +448,7 @@ export function smartBomb(s) {
   s.spill = 0;
   s.hazards = [];
   s.mines = [];
+  s.recovery = null;
   announce(s, "Smart bomb: a fresh board. Your score stays.");
   return true;
 }
@@ -434,6 +466,8 @@ export function applyPiece(s, x, y) {
     repaired = 0,
     quake = false,
     feedbackCells = targets,
+    feedbackHeights = [],
+    repairCells = [],
     detonated = false;
   if (type === "raise") {
     // Touch any part of a connected hole and patch the whole puncture first.
@@ -449,10 +483,16 @@ export function applyPiece(s, x, y) {
       s.holes[i] = false;
       repaired++;
     }
+    repairCells = [...repair];
     for (const { i, weight } of coverage)
       if (!repair.has(i))
         s.terrain[i] = Math.min(MAX_HEIGHT, s.terrain[i] + 1.4 * weight);
     points = repaired ? 100 : 0;
+    if (
+      s.recovery &&
+      coverage.some(({ i }) => s.recovery.damaged.includes(i) && !repair.has(i))
+    )
+      s.recovery.rebuilt = true;
   } else if (type === "lower") {
     const lowest = Math.min(...targets.map((i) => s.terrain[i])),
       puncture = targets.some((i) => s.holes[i]);
@@ -496,6 +536,7 @@ export function applyPiece(s, x, y) {
         announce(s, "Mine detonated! Repair the hole.");
       } else {
         feedbackCells = hit.cells;
+        feedbackHeights = hit.cells.map((i) => s.terrain[i] + s.water[i]);
         for (const i of hit.cells) {
           removed += s.water[i];
           s.water[i] = 0;
@@ -531,12 +572,46 @@ export function applyPiece(s, x, y) {
     targets,
     removed,
     repaired,
+    repairCells,
     feedbackCells,
+    feedbackHeights,
     detonated,
     quake,
     earned,
     multiplier: bonus.multiplier,
   };
+}
+// Recovery requires a real, liquid enclosure, rather than merely adding land.
+export function containedLake(s, lake) {
+  if (lake.frozen || lake.volume < 12) return false;
+  const inside = new Set(lake.cells);
+  return lake.cells.every((i) => {
+    const x = i % SIZE,
+      y = Math.floor(i / SIZE);
+    if (s.holes[i] || x === 0 || y === 0 || x === SIZE - 1 || y === SIZE - 1)
+      return false;
+    return neighbors(i).every(
+      (j) =>
+        inside.has(j) ||
+        (!s.holes[j] && s.terrain[j] >= s.terrain[i] + s.water[i] + 0.04),
+    );
+  });
+}
+function recoveryTick(s, dt) {
+  const r = s.recovery;
+  if (!r) return;
+  if (s.over || s.elapsed > r.until) {
+    s.recovery = null;
+    return;
+  }
+  r.stable =
+    r.rebuilt && lakes(s).some((l) => containedLake(s, l)) ? r.stable + dt : 0;
+  if (r.stable >= 2 - 1e-8) {
+    const earned = 500 * s.level;
+    s.score += earned;
+    s.recovery = null;
+    announce(s, `Back in balance! +${earned} recovery bonus.`);
+  }
 }
 // Conservative flux: every drop remains on the board or enters the drain.
 export function flow(s, dt = 1 / 30, leak = true) {
@@ -668,6 +743,7 @@ export function tick(s, dt, aim = s.aim || { x: 8, y: 8 }) {
   s.elapsed += dt;
   events(s, dt);
   flow(s, dt);
+  recoveryTick(s, dt);
   if (s.over || !validPlacement(s.current, aim.x, aim.y)) return;
   if (s.mode === "classic" || s.dropping) {
     const contact = landingHeight(s, aim),
@@ -817,6 +893,20 @@ export function restore(raw) {
     )
       return null;
     s.version = 3;
+    if (s.recovery === undefined) s.recovery = null;
+    if (
+      s.recovery !== null &&
+      (!finite(s.recovery.until, 0, s.elapsed + 45.001) ||
+        typeof s.recovery.rebuilt !== "boolean" ||
+        !finite(s.recovery.stable, 0, 2) ||
+        !Array.isArray(s.recovery.damaged) ||
+        !s.recovery.damaged.length ||
+        s.recovery.damaged.length > SIZE * SIZE ||
+        !s.recovery.damaged.every(
+          (i) => Number.isInteger(i) && finite(i, 0, SIZE * SIZE - 1),
+        ))
+    )
+      return null;
     return s;
   } catch {
     return null;

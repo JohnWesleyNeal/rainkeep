@@ -1,3 +1,4 @@
+import { evaporationProfile } from "./atmosphere.js";
 // Original procedural sound: small physical gestures, not a melody on every drop.
 const noiseBuffers = new WeakMap();
 function noise(context) {
@@ -89,20 +90,39 @@ export function scheduleCue(
     note(950, 420, 0.15, 0.055, 0.17);
     note(1260, 1150, 0.22, 0.026, 0.11);
   } else if (type === "sun") {
+    const profile = evaporationProfile(event);
     air(450, 1600, 0.21, 0.12);
     note(180, 66, 0.25, 0.08);
     air(
       event.removed > 0.1 ? 5400 : 2500,
       900,
-      event.removed > 0.1 ? 0.75 : 0.34,
-      0.09,
+      event.removed > 0.1 ? profile.life : 0.34,
+      0.07 + profile.strength * 0.065,
       0.09,
       "bandpass",
     );
     if (event.removed > 0.1 && event.earned > 0)
       [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
-        note(f, f * 0.996, 0.27, 0.045, 0.13 + i * 0.07, "triangle"),
+        note(
+          f,
+          f * 0.996,
+          0.27 + profile.strength * 0.2,
+          0.035 + profile.strength * 0.02,
+          0.13 + i * (0.07 + profile.strength * 0.08),
+          "triangle",
+        ),
       );
+    if (profile.strength > 0.3) {
+      note(320, 1100, 0.55 + profile.strength * 0.5, 0.04);
+      [0, 0.12, 0.25].forEach((d) => note(200 + d * 500, 100, 0.15, 0.03, d));
+    }
+  } else if (type === "warning") {
+    note(event.critical ? 160 : 220, 90, 0.3, 0.08, 0, "triangle");
+    air(500, 120, 0.26, 0.045);
+  } else if (type === "recovery") {
+    [392, 523.25, 659.25, 784].forEach((f, i) =>
+      note(f, f, 0.35, 0.05, i * 0.1, "triangle"),
+    );
   } else if (type === "bomb" || type === "mine" || type === "quake") {
     note(type === "quake" ? 78 : 122, 36, 0.48, 0.18);
     air(2000, 120, 0.5, 0.19);

@@ -14,8 +14,7 @@ import {
   waterBubbles,
   restore,
   bonuses,
-  landMass,
-  QUAKE_LIMIT,
+  quakePressure,
   smartBomb,
 } from "./simulation.js";
 import { drawWaterBubble } from "./bubble-canvas.js";
@@ -77,7 +76,8 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const world = createWorldRenderer(board, reduced);
 board.dataset.graphics = world.kind;
 let worldBonus = bonuses(state),
-  lastNotice = "";
+  lastNotice = "",
+  dangerBand = 0;
 function toast(text) {
   $("toast").textContent = text;
   $("toast").classList.add("visible");
@@ -204,13 +204,44 @@ function ui() {
   $("lakes").textContent = worldBonus.lakes;
   $("ducks").textContent = worldBonus.ducks;
   $("multiplier").textContent = "×" + worldBonus.multiplier;
-  const pressure = Math.min(
-    100,
-    Math.round((landMass(state) / QUAKE_LIMIT) * 100),
-  );
+  const risk = quakePressure(state, cursor);
+  const pressure = Math.min(100, Math.round(risk.current * 100));
+  const projected = Math.min(100, risk.projected * 100);
+  const band = risk.current >= 0.9 ? 2 : risk.current >= 0.75 ? 1 : 0;
+  const crosses = risk.projected >= 1;
+  document.querySelector(".landscape").dataset.danger = crosses
+    ? "imminent"
+    : ["calm", "warning", "critical"][band];
+  if (started && !paused && band > dangerBand)
+    tone("warning", { critical: band === 2 });
+  if (!paused) dangerBand = band;
   $("quake-text").textContent = pressure + "%";
   $("quake-bar").style.width = pressure + "%";
-  $("quake-bar").style.background = pressure > 75 ? "#c6664f" : "#9bab7a";
+  $("quake-forecast").style.left = Math.min(100, risk.current * 100) + "%";
+  $("quake-forecast").style.width =
+    Math.max(0, projected - risk.current * 100) + "%";
+  $("quake-marker").hidden =
+    state.current.type !== "raise" || projected <= risk.current * 100;
+  $("quake-marker").style.left = projected + "%";
+  $("quake-text").textContent = crosses
+    ? pressure + "% → QUAKE"
+    : pressure + "%";
+  document
+    .querySelector(".quake-meter")
+    .setAttribute(
+      "aria-valuetext",
+      `${pressure}% raised land. After this piece: ${Math.round(risk.projected * 100)}%.`,
+    );
+  const recovery = state.recovery;
+  $("recovery-status").hidden = !recovery;
+  if (recovery) {
+    $("recovery-status").textContent =
+      `${recovery.stable > 0 ? "Holding steady" : "Rebuild & contain"} · ${Math.ceil(Math.max(0, recovery.until - state.elapsed))}s`;
+    $("recovery-status").style.setProperty(
+      "--steady",
+      Math.min(100, (recovery.stable / 2) * 100) + "%",
+    );
+  }
   document
     .querySelector(".quake-meter")
     .setAttribute("aria-valuenow", pressure);
@@ -223,6 +254,8 @@ function ui() {
     state.notice !== lastNotice
   ) {
     toast(state.notice);
+    if (state.notice.startsWith("Back in balance!") && !paused)
+      tone("recovery");
     lastNotice = state.notice;
   }
   const radar = $("leak-map").getContext("2d");
@@ -573,7 +606,7 @@ function showDialog(kind) {
     title.innerHTML = "Go with<br>the <em>flow.</em>";
     copy.className = "instructions";
     copy.innerHTML =
-      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Excess land triggers earthquakes. Level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Classic:</b> dry start with falling pieces.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
+      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Excess land triggers earthquakes. The solid meter shows current land; the striped extension forecasts your Upper. Pale foam marks active leaks. After a quake, rebuild damaged ground and hold a contained liquid lake for 2 seconds within 45 seconds to earn 500 × level.<br>Level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Classic:</b> dry start with falling pieces.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
     start.textContent = started ? "Back to your landscape ↗" : "Got it ↗";
     $("modal-foot").textContent =
       "Slide to steer; re-touch keeps your aim. Arrows: fine steps. Keyboard: arrows / Shift for larger steps / R / Space.";
@@ -615,6 +648,7 @@ function newGame() {
   resume();
   save();
   lastNotice = "";
+  dangerBand = 0;
   toast(
     state.mode === "classic"
       ? "Flat and dry. Build your own lakes before water arrives."

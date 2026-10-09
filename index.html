@@ -21,12 +21,12 @@
       <header class="masthead">
         <a class="brand" href="./" aria-label="Rainkeep home"
           ><span class="brand-mark">≋</span> rainkeep<span class="brand-dot"
-            >09</span
+            >10</span
           ></a
         >
         <span class="edition"
           >A LITTLE LANDSCAPE PUZZLE
-          <span>VOL. 09 / ROOM TO PLAY</span></span
+          <span>VOL. 10 / A LITTLE LIVING ISLAND</span></span
         >
         <div class="utilities">
           <button
@@ -49,6 +49,24 @@
               ><i class="live-dot"></i>
               <span id="mode-label">DAYDREAM</span></span
             ><span id="weather-label">A GOOD DAY FOR A LITTLE RAIN</span>
+          </div>
+          <div class="seismic-display">
+            <div class="quake-heading">
+              <span>LAND / EARTHQUAKE</span><span id="quake-text">0%</span>
+            </div>
+            <div
+              class="quake-meter"
+              role="progressbar"
+              aria-label="Earthquake pressure"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <div id="quake-bar"></div>
+              <div id="quake-forecast"></div>
+              <i id="quake-marker" hidden></i>
+            </div>
+            <div id="recovery-status" hidden></div>
           </div>
           <canvas
             id="board"
@@ -159,19 +177,6 @@
               ><span>LAKES <b id="lakes">0</b></span
               ><span>DUCKS <b id="ducks">0</b></span
               ><span>SCORE <b id="multiplier">×1</b></span>
-            </div>
-            <div class="quake-heading">
-              <span>LAND / EARTHQUAKE</span><span id="quake-text">0%</span>
-            </div>
-            <div
-              class="quake-meter"
-              role="progressbar"
-              aria-label="Earthquake pressure"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              aria-valuenow="0"
-            >
-              <div id="quake-bar"></div>
             </div>
           </div>
           <div class="lake-stat">

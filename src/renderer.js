@@ -1,6 +1,14 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { SIZE, cells, landingHeight, waterBubbles } from "./simulation.js";
+import {
+  SIZE,
+  cells,
+  landingHeight,
+  waterBubbles,
+  landMass,
+  QUAKE_LIMIT,
+} from "./simulation.js";
+import { leakPaths, evaporationProfile } from "./atmosphere.js";
 import { createImpactFeedback } from "./feedback.js";
 import { createTokenWorkshop } from "./tokens.js";
 import { createCraters } from "./craters.js";
@@ -428,6 +436,10 @@ export function createWorldRenderer(canvas, reduced = false) {
     wing.scale.set(0.28, 0.55, 1.2);
     wing.position.set(0.47, 0.43, 0.06);
     g.add(wing);
+    const otherWing = wing.clone();
+    otherWing.position.x *= -1;
+    g.add(otherWing);
+    g.userData.wings = [wing, otherWing];
     scene.add(g);
     ducks.push(g);
     return g;
@@ -449,6 +461,34 @@ export function createWorldRenderer(canvas, reduced = false) {
   );
   rainbow.position.set(0, 4, -10);
   scene.add(rainbow);
+
+  const leakFoam = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.09, 6, 4),
+    new THREE.MeshBasicMaterial({
+      color: 0xe9ffff,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+    }),
+    112,
+  );
+  leakFoam.count = 0;
+  leakFoam.frustumCulled = false;
+  scene.add(leakFoam);
+  const leakMouths = new THREE.InstancedMesh(
+    new THREE.TorusGeometry(0.55, 0.055, 5, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0xaff6ff,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+    }),
+    8,
+  );
+  leakMouths.count = 0;
+  leakMouths.frustumCulled = false;
+  scene.add(leakMouths);
+  let tracedLeaks = [];
 
   const hazards = new THREE.Group();
   scene.add(hazards);
@@ -715,12 +755,81 @@ export function createWorldRenderer(canvas, reduced = false) {
     }
     streams.count = falling;
     streams.instanceMatrix.needsUpdate = true;
+    tracedLeaks = leakPaths(s);
+    let foam = 0,
+      mouthCount = 0;
+    for (const path of tracedLeaks) {
+      const i = path.mouth;
+      dummy.position.set(
+        (i % SIZE) - HALF + 0.5,
+        s.terrain[i] + s.water[i] + 0.08,
+        Math.floor(i / SIZE) - HALF + 0.5,
+      );
+      dummy.rotation.set(-Math.PI / 2, 0, 0);
+      dummy.scale.setScalar(
+        reduced ? 1 : 1 + Math.sin(worldTime * 5 + i) * 0.16,
+      );
+      dummy.updateMatrix();
+      leakMouths.setMatrixAt(mouthCount++, dummy.matrix);
+      for (let n = 0; n < path.route.length - 1 && foam < 112; n++) {
+        const a = path.route[n],
+          b = path.route[n + 1];
+        const t = reduced ? 0.5 : (worldTime * 1.6 + n * 0.17) % 1;
+        // A foam bead moves downstream along the measured head gradient.
+        dummy.position.set(
+          (b % SIZE) * (1 - t) + (a % SIZE) * t - HALF + 0.5,
+          (s.terrain[b] + s.water[b]) * (1 - t) +
+            (s.terrain[a] + s.water[a]) * t +
+            0.065,
+          Math.floor(b / SIZE) * (1 - t) +
+            Math.floor(a / SIZE) * t -
+            HALF +
+            0.5,
+        );
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(0.9, 0.45, 0.9);
+        dummy.updateMatrix();
+        leakFoam.setMatrixAt(foam++, dummy.matrix);
+      }
+    }
+    leakMouths.count = mouthCount;
+    leakMouths.instanceMatrix.needsUpdate = true;
+    leakFoam.count = foam;
+    leakFoam.instanceMatrix.needsUpdate = true;
   }
 
   function impact(event, s) {
     turnAngle = 0;
     dirty = true;
     feedback.impact(event, s);
+    if (!reduced)
+      for (const g of ducks.filter((g) => g.visible)) {
+        const distance = Math.hypot(
+          g.position.x - (event.x - HALF),
+          g.position.z - (event.y - HALF),
+        );
+        const evaporated =
+          event.type === "sun" &&
+          event.removed > 0.1 &&
+          event.feedbackCells?.includes(g.userData.cell);
+        const frightened =
+          (event.type === "bomb" || event.detonated || event.quake) &&
+          (distance < 8 || event.quake);
+        if (
+          evaporated ||
+          frightened ||
+          (event.type === "rain" && distance < 12)
+        ) {
+          g.userData.reaction = {
+            type: evaporated ? "flight" : frightened ? "scatter" : "wave",
+            started: worldTime,
+            origin: g.position.clone(),
+            yaw: g.rotation.y,
+            dx: distance ? (g.position.x - (event.x - HALF)) / distance : 0.7,
+            dz: distance ? (g.position.z - (event.y - HALF)) / distance : -0.7,
+          };
+        }
+      }
     if (event.removed > 0.1 && !reduced) {
       const geometry = waterGeometry.clone(),
         indices = [];
@@ -735,7 +844,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       geometry.setDrawRange(0, indices.length);
       const ghost = new THREE.Mesh(geometry, waterMaterial.clone());
       ghost.renderOrder = 2;
-      feedback.ghost(ghost);
+      feedback.ghost(ghost, 0.45 + evaporationProfile(event).strength * 0.8);
     }
     if (!reduced && (event.type === "rain" || event.type === "sun")) {
       for (const [x, y] of event.type === "rain"
@@ -859,28 +968,77 @@ export function createWorldRenderer(canvas, reduced = false) {
     }
     targetPositions.needsUpdate = true;
     waterMaterial.uniforms.time.value = reduced ? 0 : time;
-    let count = 0;
+    const activeDucks = new Set();
     for (const lake of options.bonuses.groups.filter(
       (l) => l.duck && !l.frozen,
     )) {
       const deep = lake.cells.filter((i) => s.water[i] >= 2.5);
       if (!deep.length) continue;
       const i = deep[Math.floor(deep.length / 2)],
-        g = ducks[count] || duck();
+        g =
+          ducks.find(
+            (d) =>
+              !activeDucks.has(d) &&
+              d.userData.reaction?.type !== "flight" &&
+              lake.cells.includes(d.userData.cell),
+          ) ||
+          ducks.find(
+            (d) =>
+              !activeDucks.has(d) && d.userData.reaction?.type !== "flight",
+          ) ||
+          duck();
+      activeDucks.add(g);
+      g.userData.cell = i;
       g.visible = true;
       g.position.set(
         (i % SIZE) - HALF + 0.5,
         s.terrain[i] +
           s.water[i] +
           0.08 +
-          (reduced ? 0 : Math.sin(time * 2 + count) * 0.05),
+          (reduced ? 0 : Math.sin(time * 2 + activeDucks.size) * 0.05),
         Math.floor(i / SIZE) - HALF + 0.5,
       );
-      g.rotation.y = 0.7 + count;
-      count++;
+      g.rotation.y = 0.7 + activeDucks.size;
     }
-    ducks.forEach((g, n) => {
-      if (n >= count) g.visible = false;
+    ducks.forEach((g) => {
+      const r = g.userData.reaction,
+        age = r ? Math.max(0, time - r.started) : 0;
+      g.visible = activeDucks.has(g) || (r?.type === "flight" && age < 2.2);
+      g.rotation.z = 0;
+      g.userData.wings.forEach((w) => (w.rotation.z = 0));
+      if (!r || reduced) return;
+      if (r.type === "flight" && age < 2.2) {
+        g.position
+          .copy(r.origin)
+          .add(
+            new THREE.Vector3(r.dx * age * 2.3, age * 3.2, r.dz * age * 2.3),
+          );
+        g.rotation.y = r.yaw;
+        g.rotation.z = Math.sin(age * 12) * 0.08;
+        g.userData.wings.forEach(
+          (w, n) =>
+            (w.rotation.z = (n ? -1 : 1) * (0.45 + Math.sin(age * 32) * 0.75)),
+        );
+        g.scale.setScalar(Math.max(0, 1 - Math.max(0, age - 1.6) / 0.6));
+      } else if (r.type !== "flight" && age < 1.6) {
+        const envelope = Math.exp(-age * 2.5);
+        g.position.y +=
+          Math.sin(age * 12) * envelope * (r.type === "wave" ? 0.32 : 0.18);
+        g.rotation.z = Math.sin(age * 11) * envelope * 0.22;
+        if (r.type === "scatter") {
+          const escape = Math.sin(Math.min(1, age / 1.6) * Math.PI) * 0.7;
+          g.position.x += r.dx * escape;
+          g.position.z += r.dz * escape;
+          g.userData.wings.forEach(
+            (w, n) =>
+              (w.rotation.z =
+                (n ? -1 : 1) * Math.sin(age * 25) * envelope * 0.6),
+          );
+        }
+      } else {
+        g.userData.reaction = null;
+        g.scale.setScalar(1);
+      }
     });
     rainbow.visible = options.bonuses.rainbow;
     for (const g of hazardCache.values()) g.visible = false;
@@ -907,6 +1065,12 @@ export function createWorldRenderer(canvas, reduced = false) {
       g.scale.setScalar(0.65);
       workshop.animate(g, time, reduced);
     }
+    feedback.anticipate(
+      s,
+      landMass(s) / QUAKE_LIMIT,
+      dt,
+      options.paused || !options.showPiece,
+    );
     feedback.render(dt, options.paused);
     if (!options.paused && shake > 0) {
       shake = Math.max(0, shake - dt);
@@ -1015,6 +1179,16 @@ export function createWorldRenderer(canvas, reduced = false) {
       });
       return {
         ...feedback.stats,
+        leakPaths: tracedLeaks.length,
+        foamBeads: leakFoam.count,
+        duckReactions: ducks
+          .filter((g) => g.visible && g.userData.reaction)
+          .map((g) => ({
+            type: g.userData.reaction.type,
+            x: g.position.x,
+            y: g.position.y,
+            wing: g.userData.wings[0].rotation.z,
+          })),
         craterEdges: craters.edges,
         tokenPose: pose,
         calls: renderer.info.render.calls,
@@ -1136,6 +1310,35 @@ function createCanvasRenderer(canvas, reduced = false) {
                 ? "#1788d9"
                 : "#243b91",
         );
+    }
+    ctx.strokeStyle = "#d1fbff";
+    ctx.fillStyle = "#eaffff";
+    ctx.lineWidth = Math.max(1, unit * 0.08);
+    for (const path of leakPaths(s, 6)) {
+      const i = path.mouth;
+      const [px, py] = project(
+        (i % SIZE) + 0.5,
+        Math.floor(i / SIZE) + 0.5,
+        s.terrain[i] + s.water[i] + 0.08,
+      );
+      ctx.beginPath();
+      ctx.ellipse(px, py, unit * 0.6, unit * 0.3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let n = 0; n < path.route.length - 1; n++) {
+        const a = path.route[n],
+          b = path.route[n + 1],
+          f = reduced ? 0.5 : (t * 1.6 + n * 0.17) % 1;
+        const point = project(
+          (b % SIZE) * (1 - f) + (a % SIZE) * f + 0.5,
+          Math.floor(b / SIZE) * (1 - f) + Math.floor(a / SIZE) * f + 0.5,
+          (s.terrain[b] + s.water[b]) * (1 - f) +
+            (s.terrain[a] + s.water[a]) * f +
+            0.08,
+        );
+        ctx.beginPath();
+        ctx.arc(...point, Math.max(1, unit * 0.07), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     if (o.showPiece && !s.over) {
       const z = Math.max(s.altitude, landingHeight(s, aim));
