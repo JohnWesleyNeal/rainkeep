@@ -227,7 +227,7 @@ function ui() {
       state.leaks[i] > 0.0001
         ? "#c25042"
         : state.holes[i]
-          ? "#293b47"
+          ? "#ffbd72"
           : state.ice[i] > 0
             ? "#eaf9fb"
             : state.water[i] > 0.12

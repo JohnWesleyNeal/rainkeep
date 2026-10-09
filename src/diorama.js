@@ -104,31 +104,7 @@ export function addIslandBody(scene) {
   roots.forEach((g) => g.dispose());
   scene.add(rootMesh);
 
-  // Silhouette detail stays outside the playable footprint, so it cannot hide
-  // a bank seam or imply a collision the game does not actually simulate.
-  const blades = [];
-  for (let n = 0; n < 72; n++) {
-    const side = n % 4,
-      t = ((Math.floor(n / 4) + 0.3) / 18) * 32 - 16;
-    const x = side < 2 ? t : side === 2 ? -16.18 : 16.18,
-      z = side < 2 ? (side === 0 ? -16.18 : 16.18) : t;
-    const h = 0.3 + Math.abs(variation(n * 12)) * 0.55;
-    const geo = new THREE.ConeGeometry(0.13, h, 3, 1);
-    geo.translate(x, -0.08 + h / 2, z);
-    blades.push(geo);
-  }
-  const grass = new THREE.Mesh(
-    mergeGeometries(blades),
-    new THREE.MeshStandardMaterial({
-      color: 0x87b25e,
-      roughness: 1,
-      flatShading: true,
-    }),
-  );
-  blades.forEach((g) => g.dispose());
-  grass.castShadow = true;
-  scene.add(grass);
-  return { body, roots: rootMesh, grass };
+  return { body, roots: rootMesh };
 }
 
 export function solidFootprint(points) {

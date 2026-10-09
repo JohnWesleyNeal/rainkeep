@@ -1,6 +1,12 @@
 # Rainkeep art
 
-Edition 05 uses original real-time Three.js geometry for the terrain, irregular rock underside, hanging roots, edge grass, banks, solid beveled pieces, ducks, mines, rainbow, and impact effects. A custom water shader adds view-dependent reflections, impact ripples, shoreline foam, and ice tint. Softer ground coloring and warm sun/cool sky lighting connect the playable island to a painted distant backdrop. Piece previews render the same 3D models as the board. Turns ease around the piece center, and terrain grows toward its committed height after contact; reduced-motion mode removes these transitions.
+Edition 06 uses original real-time Three.js geometry for the terrain, irregular rock underside, hanging roots, banks, solid beveled pieces, ducks, mines, rainbow, and impact effects. Decorative edge grass and raised direction spikes have been removed. Flat cream chevrons identify Upper/Downer pieces. Quiet sage ground, lighter elevated tops, and earth-colored slopes with restrained strata make height changes readable without a bitmap ground texture.
+
+Bombs have a shaped metal shell, brass band and fittings, curved fuse, and animated sparks. Fireballs use a luminous core and several curved, layered flame volumes with a warm color gradient and subtle motion. Water is a smooth teardrop with a glossy highlight; ice uses a beveled crystalline block. These are modeled geometry rather than generated sprites. Previews render the same models as the board.
+
+Bomb holes remove the corresponding terrain and water triangles, cut through the rock and edge skirt, and expose the sky beneath dark walls and an earth rim. Repairs restore the mesh opening. The soft landing footprint conforms to the ground/water and clips out over holes. Raised banks cast filtered 2048-pixel terrain shadows; falling pieces use the conforming footprint to avoid a second misleading offset shadow.
+
+A custom water shader adds view-dependent reflections, impact ripples, shoreline foam, and ice tint. Warm sun/cool sky lighting connects the island to the painted distant backdrop. Turns ease around the piece center, and terrain grows toward its committed height after contact; reduced-motion mode removes these transitions and token flicker.
 
 ## Generated sky backdrop
 
@@ -10,9 +16,9 @@ Final prompt:
 
 > Use case: stylized-concept. Create an original production background painting for a cozy miniature 3D floating-island water puzzle browser game. A square image, no text, no interface, no foreground game board. Art direction: beautifully art-directed hand-painted sky diorama, soft cel shading and gouache, restrained details, warm sunlight from upper left, airy blue-green sky with a pale peach golden glow high at the left. Composition for gameplay overlay: the middle 65 percent of the image must be mostly clear open sky, quiet muted blue-green gradients, absolutely no focal object or large island in the center. Place a few tiny distant floating rock islands with little tree silhouettes ONLY near far left and far right edges, small and softly misted, middle distance below the horizon. Along the bottom corners and very bottom edge, layered soft painterly cloud banks in warm off-white with blue-green shaded undersides. Depth and atmosphere, painterly brush detail, sophisticated and playful, like a high-quality indie miniature world. Plenty of clean central negative space for a dynamic 3D playable island placed over this image. No main island, no water puzzle, no characters, no buildings, no symbols, no letters, no logos, no border. This image is distant scenery, never a game screenshot.
 
-## Generated ground material
+## Historical generated ground material
 
-Final asset: `src/assets/ground.webp`. Generated with the built-in imagegen tool on 2026-10-09, then encoded as WebP for browser delivery. The bitmap is used as an albedo map on the moving terrain, rather than as a static game background. No original Wetrix art was used.
+Asset: `src/assets/ground.webp`. Generated with the built-in imagegen tool on 2026-10-09, then encoded as WebP for browser delivery. Editions 04 and 05 used it as a terrain albedo map. Edition 06 keeps the source asset for history but removes it from the runtime and offline bundle to improve height readability. No original Wetrix art was used.
 
 Final prompt:
 
