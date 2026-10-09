@@ -558,7 +558,11 @@ function land(event) {
   else if (state.turn === 12 && state.mode === "classic")
     toast("Water next. Aim inside your enclosure.");
   else if (event.type === "lower")
-    toast("Footprint leveled to its lowest point. Watch your banks.");
+    toast(
+      event.targets.some((i) => state.holes[i])
+        ? "Hole widened. Watch for leaks."
+        : "Footprint leveled to its lowest point. Watch your banks.",
+    );
   clampCursor();
   rebaseDrag(drag, cursor);
   record();

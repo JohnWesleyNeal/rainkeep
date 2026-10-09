@@ -283,20 +283,22 @@ export function footprint(p, x, y) {
   return [...coverage].map(([i, weight]) => ({ i, weight }));
 }
 export const waterTotal = (s) => s.water.reduce((a, b) => a + b, 0);
-export const landMass = (s) => s.terrain.reduce((a, b) => a + b, 0);
+export const landMass = (s) =>
+  s.terrain.reduce((mass, h, i) => mass + (s.holes?.[i] ? 0 : h), 0);
 // Long banks have support along one axis. Narrow crowns lack it along both.
 export function terrainPressure(s) {
   const mass = landMass(s),
     spikes = [];
   let surcharge = 0;
   for (let i = 0; i < s.terrain.length; i++) {
-    const h = s.terrain[i];
+    const h = s.holes?.[i] ? 0 : s.terrain[i];
     if (h <= 4.2) continue;
     const x = i % SIZE,
       y = Math.floor(i / SIZE);
     const average = (indices) =>
       indices.length
-        ? indices.reduce((n, j) => n + s.terrain[j], 0) / indices.length
+        ? indices.reduce((n, j) => n + (s.holes?.[j] ? 0 : s.terrain[j]), 0) /
+          indices.length
         : h;
     const horizontal = average(
       [x >= 2 ? i - 2 : -1, x < SIZE - 2 ? i + 2 : -1].filter((j) => j >= 0),
@@ -318,17 +320,18 @@ export function terrainPressure(s) {
   }
   return { mass, surcharge, spikes, total: mass + surcharge };
 }
-// Use the same area-weighted raise, height cap, and hole-repair rule as landing.
+// Forecast the same fractional edits, height cap and whole-sample punctures.
 export function quakePressure(s, aim = s.aim) {
   const pressure = terrainPressure(s);
   let projected = pressure.total;
   if (["raise", "lower"].includes(s.current.type) && aim) {
-    const terrain = s.terrain.slice();
+    const terrain = s.terrain.map((h, i) => (s.holes[i] ? 0 : h));
     const covered = footprint(s.current, aim.x, aim.y);
     const lowest = Math.min(...covered.map(({ i }) => terrain[i]));
+    const puncture = covered.some(({ i }) => s.holes[i]);
     for (const { i, weight } of covered)
       if (s.current.type === "lower")
-        terrain[i] += (lowest - terrain[i]) * weight;
+        terrain[i] = puncture ? 0 : terrain[i] + (lowest - terrain[i]) * weight;
       else if (!s.holes[i])
         terrain[i] = Math.min(MAX_HEIGHT, terrain[i] + 1.4 * weight);
     projected = terrainPressure({ terrain }).total;
@@ -520,6 +523,7 @@ export function applyPiece(s, x, y) {
           stack.push(j);
         }
     for (const i of repair) {
+      s.terrain[i] = 0;
       s.holes[i] = false;
       repaired++;
     }
@@ -537,7 +541,10 @@ export function applyPiece(s, x, y) {
     const lowest = Math.min(...targets.map((i) => s.terrain[i])),
       puncture = targets.some((i) => s.holes[i]);
     for (const { i, weight } of coverage) {
-      s.terrain[i] += (lowest - s.terrain[i]) * weight;
+      // A puncture removes the whole sample, including a fractional rim hit.
+      s.terrain[i] = puncture
+        ? 0
+        : s.terrain[i] + (lowest - s.terrain[i]) * weight;
       s.water[i] *= 1 - weight;
       s.ice[i] = 0;
       if (puncture) s.holes[i] = true;
@@ -987,6 +994,8 @@ export function restore(raw) {
         ))
     )
       return null;
+    // Earlier fractional Downers could leave invisible land inside openings.
+    s.terrain = s.terrain.map((h, i) => (s.holes[i] ? 0 : h));
     return s;
   } catch {
     return null;

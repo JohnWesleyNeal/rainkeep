@@ -1,5 +1,13 @@
 # Rainkeep validation
 
+## Edition 14
+
+Version 1.13.0, validated on 2026-10-09. A Downer touching a hole now removes all terrain from every pierced sample, including partially covered rims. Previously those samples became holes but retained fractional land height, which still counted toward earthquakes and could return when patched. Missing land now contributes neither volume, peak surcharge nor support for nearby peaks. The forecast reproduces the full puncture removal. Older saved openings have their invisible terrain removed on restoration; an Upper patches them at base height. Empty openings give no negative pressure credit against distant towers. Normal Downers still lower intact land proportionally. The existing landing message distinguishes hole widening from leveling.
+
+90 Node tests pass, including all twelve authored stage solutions. Five new regression tests cover fractional rim removal across all four rotations, exact forecast/landing relief, a Downer preventing a false earthquake, empty-hole expansion without negative credit, missing peak support and old-save repair. Against the previous source, a reproduced raised-rim placement left pressure at 109.5% and caused a quake; the corrected landing leaves 97.6% and no quake.
+
+59 focused compiled browser checks pass across WebGL and Canvas at an emulated 390 × 650 phone viewport. They exercise real touch drops on raised rims, flat holes and old saved hole remnants, verify forecasts, pressure gauges, actual removed terrain, widening feedback, reload persistence and screen fit. The existing 29 compiled release checks also pass, including steering, descent, Fire scoring, bombs, repairs, ice, mines, earthquakes, save migration, offline play, Canvas fallback and four layouts. Phone-sized before/after screenshots were inspected. No browser exceptions occurred. The build remains approximately 696 kB JavaScript / 188 kB gzip with the existing chunk-size warning; no assets or saved-data schema were added.
+
 ## Edition 13
 
 Version 1.12.0, validated on 2026-10-09. Learn & play presents the first seven stages as field lessons, followed by five challenges. Contextual notes and optional looping rule demonstrations occupy the existing piece card and preview; a broad, quiet contour marks the relevant part of the board. Notes follow real banks, water, ice, holes, peaks and goal counters rather than advancing on a drop count. A missed Upper keeps the bank lesson active; surviving water after a repair does not require unnecessary refilling. Mine-bearing ice describes the following Fire as a detonation rather than evaporation. Pause stops demonstrations, reduced motion shows a still example, and guide visibility saves independently of the run.

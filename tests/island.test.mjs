@@ -13,8 +13,104 @@ import {
   containedLake,
   lakes,
   smartBomb,
+  footprint,
 } from "../src/simulation.js";
 import { leakPaths, evaporationProfile } from "../src/atmosphere.js";
+
+test("fractional Downers widening a hole remove all pierced land and forecast exact relief", () => {
+  for (let rotation = 0; rotation < 4; rotation++) {
+    const s = createGame("classic", 42);
+    s.current = { type: "lower", shape: 3, rotation };
+    const x = 8.23,
+      y = 10.76;
+    const covered = footprint(s.current, x, y);
+    for (const { i } of covered) s.terrain[i] = 7;
+    s.holes[covered[0].i] = true;
+    s.terrain[covered[0].i] = 0;
+    s.terrain[28 * 32 + 28] = 6;
+    const untouched = terrainPressure({
+      terrain: s.terrain.map((h, i) =>
+        covered.some((c) => c.i === i) ? 0 : h,
+      ),
+    });
+    const forecast = quakePressure(s, { x, y });
+    assert.ok(forecast.projected < forecast.current);
+    applyPiece(s, x, y);
+    assert.ok(covered.some(({ weight }) => weight < 1));
+    assert.ok(covered.every(({ i }) => s.holes[i] && s.terrain[i] === 0));
+    assert.deepEqual(terrainPressure(s), untouched);
+    assert.ok(Math.abs(forecast.projected * QUAKE_LIMIT - untouched.total) < 1e-8);
+    assert.equal(s.quakes, 0);
+  }
+});
+
+test("widening an empty hole gives no negative credit against distant peaks", () => {
+  const s = createGame("classic", 42);
+  s.current = { type: "lower", shape: 2, rotation: 0 };
+  s.holes[8 * 32 + 8] = true;
+  s.terrain[28 * 32 + 28] = 7;
+  const before = terrainPressure(s);
+  assert.equal(
+    quakePressure(s, { x: 8.2, y: 8.2 }).projected,
+    before.total / QUAKE_LIMIT,
+  );
+  applyPiece(s, 8.2, 8.2);
+  assert.ok(s.holes.filter(Boolean).length > 1);
+  assert.deepEqual(terrainPressure(s), before);
+});
+
+test("cutting away a raised rim can prevent a quake at the pressure limit", () => {
+  const s = createGame("classic", 42);
+  s.terrain.fill(0.705);
+  s.current = { type: "lower", shape: 3, rotation: 0 };
+  const aim = { x: 8.23, y: 10.76 };
+  const covered = footprint(s.current, aim.x, aim.y);
+  for (const { i } of covered) s.terrain[i] = 7;
+  s.holes[covered[0].i] = true;
+  s.terrain[covered[0].i] = 0;
+  const forecast = quakePressure(s, aim);
+  assert.ok(forecast.current > 1 && forecast.projected < 1);
+  const event = applyPiece(s, aim.x, aim.y);
+  assert.equal(event.quake, false);
+  assert.equal(s.quakes, 0);
+  assert.ok(terrainPressure(s).total < QUAKE_LIMIT);
+});
+
+test("missing land contributes neither mass, spikes nor support to nearby peaks", () => {
+  const s = createGame("classic", 42);
+  const peak = 10 * 32 + 10;
+  s.terrain[peak] = 7;
+  for (const i of [peak - 2, peak + 2, peak - 64, peak + 64]) {
+    s.terrain[i] = 7;
+    s.holes[i] = true;
+  }
+  const clean = { terrain: s.terrain.map((h, i) => (s.holes[i] ? 0 : h)) };
+  assert.deepEqual(terrainPressure(s), terrainPressure(clean));
+  assert.equal(landMass(s), 7);
+  assert.ok(terrainPressure(s).surcharge > 0);
+});
+
+test("old hole remnants are removed on restore and cannot reappear through repair", () => {
+  const s = createGame("classic", 42);
+  s.current = { type: "raise", shape: 2, rotation: 0 };
+  const i = 10 * 32 + 10;
+  s.holes[i] = s.holes[i + 1] = true;
+  s.terrain[i] = s.terrain[i + 1] = 7;
+  s.score = 321;
+  const restored = restore(JSON.stringify(s));
+  assert.ok(restored);
+  assert.equal(restored.terrain[i], 0);
+  assert.equal(restored.terrain[i + 1], 0);
+  assert.equal(restored.score, 321);
+  assert.ok(restored.holes[i]);
+  const forecast = quakePressure(s, { x: 10.2, y: 10.2 });
+  applyPiece(s, 10.2, 10.2);
+  assert.equal(s.holes[i], false);
+  assert.equal(s.terrain[i], 0);
+  assert.ok(
+    Math.abs(forecast.projected * QUAKE_LIMIT - terrainPressure(s).total) < 1e-8,
+  );
+});
 
 test("earthquake forecast matches capped fractional Uppers and connected-hole repair", () => {
   for (const [x, y, rotation] of [
