@@ -19,14 +19,30 @@ test("relative isometric slides move exactly one cell and survive a new grip", (
   drag = beginDrag({ x: 300, y: 200 }, aim, 18);
   assert.deepEqual(moveDrag(drag, { x: 318, y: 209 }, piece), { x: 7, y: 5 });
 });
-test("small finger jitter does not flip tile placement at a crossed boundary", () => {
+test("placement is continuous while subpixel sensor noise is ignored", () => {
   const drag = beginDrag({ x: 100, y: 100 }, { x: 5, y: 5 }, 18);
-  assert.deepEqual(moveDrag(drag, { x: 113, y: 106.5 }, piece), { x: 6, y: 5 });
-  for (const amount of [12, 13, 11, 12.5, 13])
+  const aim = moveDrag(drag, { x: 113, y: 106.5 }, piece);
+  assert.ok(Math.abs(aim.x - (5 + 13 / 18)) < 1e-10);
+  assert.equal(aim.y, 5);
+  assert.deepEqual(moveDrag(drag, { x: 113.1, y: 106.55 }, piece), aim);
+  const next = moveDrag(drag, { x: 113.5, y: 106.75 }, piece);
+  assert.ok(Math.abs(next.x - 5.75) < 1e-10);
+});
+
+test("rotated views keep thumb movement aligned with the visible board", () => {
+  const expected = [
+    { x: 9, y: 8 },
+    { x: 8, y: 7 },
+    { x: 7, y: 8 },
+    { x: 8, y: 9 },
+  ];
+  for (let quarter = 0; quarter < 4; quarter++) {
+    const drag = beginDrag({ x: 100, y: 100 }, { x: 8, y: 8 }, 18, quarter);
     assert.deepEqual(
-      moveDrag(drag, { x: 100 + amount, y: 100 + amount / 2 }, piece),
-      { x: 6, y: 5 },
+      moveDrag(drag, { x: 118, y: 109 }, piece),
+      expected[quarter],
     );
+  }
 });
 test("overshooting a board edge does not accumulate a dead drag distance", () => {
   const drag = beginDrag({ x: 0, y: 0 }, { x: 27, y: 27 }, 18);

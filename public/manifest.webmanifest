@@ -5,8 +5,8 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#eeeadd",
-  "theme_color": "#eeeadd",
+  "background_color": "#102b37",
+  "theme_color": "#102b37",
   "description": "Build banks, make lakes, keep the rain.",
   "icons": [
     {

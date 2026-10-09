@@ -16,7 +16,7 @@ export function clampAim(aim, piece) {
 
 // A touch is a clutch: touching anywhere continues from the current aim.
 // Movement is measured in a fixed plane, never against moving water/terrain.
-export function beginDrag(point, aim, unit) {
+export function beginDrag(point, aim, unit, quarter = 0) {
   return {
     lastX: point.x,
     lastY: point.y,
@@ -24,6 +24,7 @@ export function beginDrag(point, aim, unit) {
     y: aim.y,
     aim: { ...aim },
     unit: Math.max(11, unit),
+    quarter,
   };
 }
 export function rebaseDrag(drag, aim) {
@@ -36,24 +37,24 @@ export function rebaseDrag(drag, aim) {
 export function moveDrag(drag, point, piece) {
   const dx = point.x - drag.lastX,
     dy = point.y - drag.lastY;
+  // Ignore sensor noise, accumulating it against the last meaningful sample.
+  if (Math.hypot(dx, dy) < 0.3) return { ...drag.aim };
   drag.lastX = point.x;
   drag.lastY = point.y;
+  const a = dx / (2 * drag.unit) + dy / drag.unit,
+    b = -dx / (2 * drag.unit) + dy / drag.unit,
+    angle = (drag.quarter * Math.PI) / 2,
+    c = Math.round(Math.cos(angle)),
+    s = Math.round(Math.sin(angle));
   const continuous = clampAim(
     {
-      x: drag.x + dx / (2 * drag.unit) + dy / drag.unit,
-      y: drag.y - dx / (2 * drag.unit) + dy / drag.unit,
+      x: drag.x + c * a + s * b,
+      y: drag.y - s * a + c * b,
     },
     piece,
   );
   drag.x = continuous.x;
   drag.y = continuous.y;
-  // Schmitt threshold: crossing a tile border takes deliberate movement;
-  // sub-pixel jitter cannot bounce a piece back and forth between tiles.
-  for (const axis of ["x", "y"]) {
-    const difference = drag[axis] - drag.aim[axis];
-    if (difference > 0.65) drag.aim[axis] += Math.floor(difference + 0.35);
-    else if (difference < -0.65) drag.aim[axis] += Math.ceil(difference - 0.35);
-  }
-  drag.aim = clampAim(drag.aim, piece);
+  drag.aim = continuous;
   return { ...drag.aim };
 }

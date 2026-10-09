@@ -361,7 +361,7 @@ test("legacy 16-cell saves migrate geometrically without losing score, aim, wate
   };
   old.water[6 * 16 + 7] = 1.2;
   const s = restore(old);
-  assert.equal(s.version, 2);
+  assert.equal(s.version, 3);
   assert.equal(s.score, 321);
   assert.equal(s.spill / LIMIT, old.spill / 80);
   assert.deepEqual(s.aim, { x: 12, y: 14 });

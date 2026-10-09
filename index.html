@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#eeeadd" />
+    <meta name="theme-color" content="#102b37" />
     <meta
       name="description"
       content="Build little banks. Catch the rain. A nostalgic landscape puzzle for your browser."
@@ -21,12 +21,12 @@
       <header class="masthead">
         <a class="brand" href="./" aria-label="Rainkeep home"
           ><span class="brand-mark">≋</span> rainkeep<span class="brand-dot"
-            >03</span
+            >04</span
           ></a
         >
         <span class="edition"
           >A LITTLE LANDSCAPE PUZZLE
-          <span>VOL. 03 / BUILD BEFORE THE RAIN</span></span
+          <span>VOL. 04 / A WORLD ABOVE THE CLOUDS</span></span
         >
         <div class="utilities">
           <button
@@ -56,7 +56,12 @@
             aria-label="Isometric landscape. Use arrow keys to position, R to rotate, and Space to drop a piece."
           ></canvas>
           <div class="board-caption">
-            <span>BUILD BANKS. MAKE LAKES. KEEP THE RAIN.</span
+            <button
+              id="view"
+              class="view-btn"
+              aria-label="Turn camera. View 1 of 4"
+            >
+              ↻ Turn view</button
             ><span id="turn-label">DROP 01</span>
           </div>
           <div id="toast" role="status" aria-live="polite"></div>
@@ -142,7 +147,7 @@
             </button>
           </div>
           <p class="input-tip" id="input-tip">
-            Point to steer · R to rotate · Space to drop faster
+            Point to align · Arrows to trim · R to rotate · Space to drop
           </p>
           <div class="mechanics-panel">
             <div class="world-stats">

@@ -145,7 +145,7 @@ export function cells(p) {
 }
 export function createGame(mode = "classic", seed = Date.now() >>> 0) {
   const s = {
-    version: 2,
+    version: 3,
     mode,
     seed,
     terrain: Array(SIZE * SIZE).fill(0),
@@ -186,23 +186,44 @@ export function createGame(mode = "classic", seed = Date.now() >>> 0) {
 }
 export function validPlacement(p, x, y) {
   return (
-    Number.isInteger(x) &&
-    Number.isInteger(y) &&
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
     cells(p).every(
       ([dx, dy]) =>
-        x + dx >= 0 && y + dy >= 0 && x + dx < SIZE && y + dy < SIZE,
+        x + dx >= 0 && y + dy >= 0 && x + dx + 1 <= SIZE && y + dy + 1 <= SIZE,
     )
   );
+}
+// Integrate the actual piece footprint over the terrain samples. A partial
+// overlap raises a lower bank, so imperfect seams affect water containment.
+export function footprint(p, x, y) {
+  if (!validPlacement(p, x, y)) return [];
+  const coverage = new Map();
+  for (const [dx, dy] of cells(p)) {
+    const left = x + dx,
+      top = y + dy;
+    for (let cy = Math.floor(top); cy < Math.ceil(top + 1); cy++)
+      for (let cx = Math.floor(left); cx < Math.ceil(left + 1); cx++) {
+        const weight =
+          (Math.min(cx + 1, left + 1) - Math.max(cx, left)) *
+          (Math.min(cy + 1, top + 1) - Math.max(cy, top));
+        if (weight > 1e-9) {
+          const i = cy * SIZE + cx;
+          coverage.set(i, Math.min(1, (coverage.get(i) || 0) + weight));
+        }
+      }
+  }
+  return [...coverage].map(([i, weight]) => ({ i, weight }));
 }
 export const waterTotal = (s) => s.water.reduce((a, b) => a + b, 0);
 export const landMass = (s) => s.terrain.reduce((a, b) => a + b, 0);
 export const fallDuration = (s) => Math.max(2.8, 8 - (s.level - 1) * 0.55);
 export function landingHeight(s, aim) {
   return Math.max(
-    ...cells(s.current).map(([dx, dy]) => {
-      const i = (aim.y + dy) * SIZE + aim.x + dx;
-      return s.terrain[i] + s.water[i];
-    }),
+    0,
+    ...footprint(s.current, aim.x, aim.y).map(
+      ({ i }) => s.terrain[i] + s.water[i],
+    ),
   );
 }
 export function accelerateDrop(s) {
@@ -270,23 +291,27 @@ function announce(s, text) {
 }
 function area(x, y, radius) {
   const a = [];
-  for (let dy = -radius; dy <= radius; dy++)
-    for (let dx = -radius; dx <= radius; dx++)
-      if (
-        x + dx >= 0 &&
-        y + dy >= 0 &&
-        x + dx < SIZE &&
-        y + dy < SIZE &&
-        dx * dx + dy * dy <= radius * radius + 1
-      )
-        a.push((y + dy) * SIZE + x + dx);
+  for (
+    let cy = Math.max(0, Math.floor(y - radius));
+    cy <= Math.min(SIZE - 1, Math.ceil(y + radius));
+    cy++
+  )
+    for (
+      let cx = Math.max(0, Math.floor(x - radius));
+      cx <= Math.min(SIZE - 1, Math.ceil(x + radius));
+      cx++
+    )
+      if ((cx - x) ** 2 + (cy - y) ** 2 <= radius * radius + 1)
+        a.push(cy * SIZE + cx);
   return a;
 }
 function queueHazard(s, type, x, y) {
   s.hazards.push({ type, x, y, altitude: SPAWN_ALTITUDE });
 }
 export function explode(s, x, y) {
-  const i = y * SIZE + x,
+  const i =
+      Math.min(SIZE - 1, Math.floor(y + 0.5)) * SIZE +
+      Math.min(SIZE - 1, Math.floor(x + 0.5)),
     repeat = s.holes[i],
     targets = area(x, y, 2);
   for (const j of targets) {
@@ -334,7 +359,9 @@ export function smartBomb(s) {
 export function applyPiece(s, x, y) {
   if (s.over || !validPlacement(s.current, x, y)) return null;
   const type = s.current.type,
-    targets = cells(s.current).map(([dx, dy]) => (y + dy) * SIZE + x + dx),
+    coverage = footprint(s.current, x, y),
+    targets = coverage.map(({ i }) => i),
+    center = Math.floor(y + 0.5) * SIZE + Math.floor(x + 0.5),
     bonus = bonuses(s);
   let removed = 0,
     points = 0,
@@ -354,33 +381,31 @@ export function applyPiece(s, x, y) {
       s.holes[i] = false;
       repaired++;
     }
-    for (const i of targets)
+    for (const { i, weight } of coverage)
       if (!repair.has(i))
-        s.terrain[i] = Math.min(MAX_HEIGHT, s.terrain[i] + 1.4);
+        s.terrain[i] = Math.min(MAX_HEIGHT, s.terrain[i] + 1.4 * weight);
     points = repaired ? 100 : 0;
   } else if (type === "lower") {
     const lowest = Math.min(...targets.map((i) => s.terrain[i])),
       puncture = targets.some((i) => s.holes[i]);
-    for (const i of targets) {
-      s.terrain[i] = lowest;
-      s.water[i] = 0;
+    for (const { i, weight } of coverage) {
+      s.terrain[i] += (lowest - s.terrain[i]) * weight;
+      s.water[i] *= 1 - weight;
       s.ice[i] = 0;
       if (puncture) s.holes[i] = true;
     }
   } else if (type === "rain") {
-    const i = targets[0];
-    s.water[i] += 64 + s.level * 8;
-    // Several splashes are distributed locally rather than becoming a tall column.
-    const patch = area(x, y, 2).filter(
+    for (const { i, weight } of coverage) {
+      const patch = area(i % SIZE, Math.floor(i / SIZE), 2).filter(
         (j) => s.terrain[j] <= s.terrain[i] + 0.01,
-      ),
-      volume = s.water[i];
-    s.water[i] = 0;
-    for (const j of patch) s.water[j] += volume / patch.length;
-    if (s.ice[i] > 0)
-      for (const j of patch) s.ice[j] = Math.max(s.ice[j], s.ice[i]);
+      );
+      for (const j of patch) {
+        s.water[j] += ((64 + s.level * 8) * weight) / patch.length;
+        if (s.ice[i] > 0) s.ice[j] = Math.max(s.ice[j], s.ice[i]);
+      }
+    }
   } else if (type === "sun") {
-    const hit = bonus.groups.find((l) => l.cells.includes(targets[0]));
+    const hit = bonus.groups.find((l) => l.cells.includes(center));
     if (hit?.frozen) {
       for (const i of hit.cells) s.ice[i] = 0;
       announce(s, "Fire thawed the lake. Water remains.");
@@ -419,6 +444,8 @@ export function applyPiece(s, x, y) {
   s.dropping = false;
   return {
     type,
+    x,
+    y,
     targets,
     removed,
     repaired,
@@ -584,7 +611,7 @@ export function restore(raw) {
       p.rotation < 4;
     if (
       !s ||
-      ![1, 2].includes(s.version) ||
+      ![1, 2, 3].includes(s.version) ||
       !["classic", "daydream"].includes(s.mode) ||
       !Number.isInteger(s.seed) ||
       !finite(s.seed, 0, 4294967295) ||
@@ -640,7 +667,7 @@ export function restore(raw) {
       s = {
         ...upgraded,
         ...s,
-        version: 2,
+        version: 3,
         terrain: expand(s.terrain),
         water: expand(s.water),
         spill: s.spill * 8,
@@ -649,13 +676,7 @@ export function restore(raw) {
         level: Math.min(10, 1 + Math.floor(s.elapsed / LEVEL_SECONDS)),
       };
     }
-    if (
-      s.aim &&
-      (!Number.isInteger(s.aim.x) ||
-        !Number.isInteger(s.aim.y) ||
-        !validPlacement(s.current, s.aim.x, s.aim.y))
-    )
-      return null;
+    if (s.aim && !validPlacement(s.current, s.aim.x, s.aim.y)) return null;
     if (
       !Array.isArray(s.holes) ||
       s.holes.length !== SIZE * SIZE ||
@@ -707,6 +728,7 @@ export function restore(raw) {
       )
     )
       return null;
+    s.version = 3;
     return s;
   } catch {
     return null;
