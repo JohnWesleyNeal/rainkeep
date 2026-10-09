@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { SIZE, cells, landingHeight } from "./simulation.js";
+import { createImpactFeedback } from "./feedback.js";
 import { createTokenWorkshop } from "./tokens.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { addIslandBody, solidFootprint } from "./diorama.js";
@@ -109,7 +110,6 @@ export function createWorldRenderer(canvas, reduced = false) {
     elapsed = 0;
   let pieceKey = "",
     piece = new THREE.Group(),
-    fx = [],
     shake = 0;
   let turnAngle = 0,
     dirty = true;
@@ -123,6 +123,9 @@ export function createWorldRenderer(canvas, reduced = false) {
     camera.updateMatrixWorld();
   }
   positionCamera();
+  const feedback = createImpactFeedback(scene, camera, reduced);
+  let lastPieceTurn = -1,
+    arrivedAt = 0;
 
   const terrainGeometry = new THREE.BufferGeometry();
   const positions = new Float32Array((SIZE + 1) ** 2 * 3);
@@ -251,6 +254,7 @@ export function createWorldRenderer(canvas, reduced = false) {
   const waterMaterial = new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },
+      fade: { value: 1 },
       eye: { value: camera.position },
       ripples: {
         value: Array.from(
@@ -267,7 +271,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       void main() { world = (modelMatrix * vec4(position,1.)).xyz;
         amount = depth; frost = frozen;
         gl_Position = projectionMatrix * viewMatrix * vec4(world,1.); }`,
-    fragmentShader: `uniform float time; uniform vec3 eye; uniform vec4 ripples[4];
+    fragmentShader: `uniform float time; uniform float fade; uniform vec3 eye; uniform vec4 ripples[4];
       varying vec3 world; varying float amount; varying float frost;
       void main() {
         if (amount < .035) discard;
@@ -298,7 +302,7 @@ export function createWorldRenderer(canvas, reduced = false) {
         float crystal=pow(abs(sin(world.x*3.+world.z*2.)*sin(world.z*4.-world.x)),12.);
         col=mix(col,vec3(.51,.78,.84)+crystal*.13,frost);
         col *= vec3(.48,.75,.88);
-        gl_FragColor = vec4(col, smoothstep(.035,.13,amount)*.97);
+        gl_FragColor = vec4(col, smoothstep(.035,.13,amount)*.97*fade);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -508,7 +512,13 @@ export function createWorldRenderer(canvas, reduced = false) {
       piece.add(blocks, markers);
     } else {
       const token = makeToken(p.type);
-      token.position.set(0.5 - w / 2, 0.1, 0.5 - h / 2);
+      token.userData.baseLift =
+        p.type === "bomb" ? 1.275 : p.type === "sun" ? 1.08 : 1.05;
+      token.position.set(
+        0.5 - w / 2,
+        token.userData.baseLift + 0.05,
+        0.5 - h / 2,
+      );
       piece.add(token);
     }
     shadowMaterial.map?.dispose();
@@ -697,10 +707,26 @@ export function createWorldRenderer(canvas, reduced = false) {
     streams.instanceMatrix.needsUpdate = true;
   }
 
-  const ringGeometry = new THREE.TorusGeometry(1, 0.025, 4, 40);
-  const moteGeometry = new THREE.SphereGeometry(0.08, 6, 4);
   function impact(event, s) {
     turnAngle = 0;
+    dirty = true;
+    feedback.impact(event, s);
+    if (event.removed > 0.1 && !reduced) {
+      const geometry = waterGeometry.clone(),
+        indices = [];
+      for (const i of event.feedbackCells || event.targets) {
+        const x = i % SIZE,
+          y = Math.floor(i / SIZE),
+          v = y * (SIZE + 1) + x;
+        indices.push(v, v + SIZE + 1, v + 1, v + 1, v + SIZE + 1, v + SIZE + 2);
+      }
+      geometry.index.array.set(indices);
+      geometry.index.needsUpdate = true;
+      geometry.setDrawRange(0, indices.length);
+      const ghost = new THREE.Mesh(geometry, waterMaterial.clone());
+      ghost.renderOrder = 2;
+      feedback.ghost(ghost);
+    }
     if (!reduced && (event.type === "rain" || event.type === "sun")) {
       waterMaterial.uniforms.ripples.value[rippleIndex++ % 4].set(
         (event.x ?? 0) - HALF + 0.5,
@@ -709,61 +735,8 @@ export function createWorldRenderer(canvas, reduced = false) {
         event.type === "rain" ? 1 : 0.6,
       );
     }
-    if (reduced) return;
-    const x = event.x ?? event.targets[0] % SIZE,
-      y = event.y ?? Math.floor(event.targets[0] / SIZE);
-    const i = Math.floor(y) * SIZE + Math.floor(x),
-      z = s.terrain[i] + s.water[i] + 0.14;
-    const ring = new THREE.Mesh(
-      ringGeometry,
-      new THREE.MeshBasicMaterial({
-        color: palette[event.type],
-        transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
-      }),
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x - HALF + 0.5, z, y - HALF + 0.5);
-    scene.add(ring);
-    fx.push({ mesh: ring, life: 1, max: 1, ring: true });
-    const motes = new THREE.InstancedMesh(
-      moteGeometry,
-      new THREE.MeshBasicMaterial({
-        color: event.type === "sun" ? 0xe3f9ec : palette[event.type],
-        transparent: true,
-        opacity: 1,
-      }),
-      18,
-    );
-    motes.frustumCulled = false;
-    const particles = [];
-    for (let n = 0; n < 18; n++) {
-      const angle = (n / 18) * Math.PI * 2;
-      const j = event.targets[Math.floor((n / 18) * event.targets.length)];
-      const position = new THREE.Vector3(
-        (j % SIZE) - HALF + 0.5,
-        s.terrain[j] + s.water[j] + 0.2,
-        Math.floor(j / SIZE) - HALF + 0.5,
-      );
-      particles.push({
-        position,
-        v: new THREE.Vector3(
-          Math.cos(angle) * (1 + (n % 3)),
-          2.5 + (n % 4),
-          Math.sin(angle) * (1 + (n % 3)),
-        ),
-      });
-      dummy.position.copy(position);
-      dummy.scale.setScalar(1);
-      dummy.rotation.set(0, 0, 0);
-      dummy.updateMatrix();
-      motes.setMatrixAt(n, dummy.matrix);
-    }
-    scene.add(motes);
-    fx.push({ mesh: motes, life: 0.75, max: 0.75, particles });
-    if (event.quake) shake = 0.65;
-    dirty = true;
+    if (!reduced && (event.type === "bomb" || event.detonated || event.quake))
+      shake = event.quake ? 0.65 : 0.22;
   }
   const raycaster = new THREE.Raycaster(),
     plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
@@ -806,6 +779,15 @@ export function createWorldRenderer(canvas, reduced = false) {
       dirty = false;
     }
     updatePiece(s.current);
+    if (s.turn !== lastPieceTurn) {
+      lastPieceTurn = s.turn;
+      arrivedAt = time;
+    }
+    const age = Math.max(0, time - arrivedAt),
+      arrival = reduced
+        ? 1
+        : 1 + Math.sin(age * 22) * Math.exp(-age * 14) * 0.12;
+    piece.scale.setScalar(arrival);
     piece.visible = options.showPiece && !s.over;
     piece.position.set(
       aim.x - HALF + shadow.userData.w / 2,
@@ -815,7 +797,16 @@ export function createWorldRenderer(canvas, reduced = false) {
     if (!options.paused) turnAngle *= Math.exp(-dt * 24);
     piece.rotation.y = turnAngle;
     shadow.visible = piece.visible;
-    workshop.animate(piece, time, reduced);
+    workshop.animate(
+      piece,
+      time,
+      reduced,
+      s.dropping ? 1 : s.mode === "classic" ? 0.25 : 0,
+    );
+    for (const token of piece.children)
+      if (token.userData.baseLift)
+        token.position.y =
+          0.05 + token.userData.baseLift * token.children[0].scale.y;
     shadowMaterial.opacity = Math.max(
       0.12,
       0.27 - (s.altitude - landingHeight(s, aim)) * 0.009,
@@ -903,31 +894,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       g.scale.setScalar(0.65);
       workshop.animate(g, time, reduced);
     }
-    if (!options.paused)
-      for (const f of fx) {
-        f.life -= dt;
-        f.mesh.material.opacity = Math.max(0, f.life / f.max);
-        if (f.ring) f.mesh.scale.setScalar(1 + (1 - f.life) * 4);
-        else {
-          f.particles.forEach((p, n) => {
-            p.position.addScaledVector(p.v, dt);
-            p.v.y -= dt * 7;
-            dummy.position.copy(p.position);
-            dummy.scale.setScalar(1);
-            dummy.rotation.set(0, 0, 0);
-            dummy.updateMatrix();
-            f.mesh.setMatrixAt(n, dummy.matrix);
-          });
-          f.mesh.instanceMatrix.needsUpdate = true;
-        }
-      }
-    fx = fx.filter((f) => {
-      if (f.life > 0) return true;
-      scene.remove(f.mesh);
-      f.mesh.material.dispose();
-      if (f.mesh.isInstancedMesh) f.mesh.dispose();
-      return false;
-    });
+    feedback.render(dt, options.paused);
     if (!options.paused && shake > 0) {
       shake = Math.max(0, shake - dt);
       camera.setViewOffset(
@@ -970,6 +937,9 @@ export function createWorldRenderer(canvas, reduced = false) {
       { w, h } = shadow.userData;
     clone.position.set(0, 0, 0);
     clone.rotation.y = 0;
+    clone.scale.setScalar(1);
+    for (const token of clone.children)
+      if (token.userData.baseLift) token.position.y = 0;
     clone.visible = true;
     previewScene.add(clone);
     const span = Math.max(5, (w + h) * 0.62);
@@ -1025,7 +995,14 @@ export function createWorldRenderer(canvas, reduced = false) {
       positionCamera();
     },
     get stats() {
+      let pose = null;
+      piece.traverse((o) => {
+        if (o.userData.tokenMotion)
+          pose = { bob: o.position.y, lean: o.rotation.z, stretch: o.scale.y };
+      });
       return {
+        ...feedback.stats,
+        tokenPose: pose,
         calls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
         rotationAngle: turnAngle,
@@ -1041,12 +1018,8 @@ export function createWorldRenderer(canvas, reduced = false) {
       };
     },
     clear() {
-      for (const f of fx) {
-        scene.remove(f.mesh);
-        f.mesh.material.dispose();
-        if (f.mesh.isInstancedMesh) f.mesh.dispose();
-      }
-      fx = [];
+      feedback.clear();
+      lastPieceTurn = -1;
       shake = 0;
       lastUpdate = -1;
       dirty = true;

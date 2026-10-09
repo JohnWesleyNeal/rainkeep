@@ -359,6 +359,7 @@ export function smartBomb(s) {
 export function applyPiece(s, x, y) {
   if (s.over || !validPlacement(s.current, x, y)) return null;
   const committedPiece = { ...s.current };
+  const contactHeight = landingHeight(s, { x, y });
   const type = s.current.type,
     coverage = footprint(s.current, x, y),
     targets = coverage.map(({ i }) => i),
@@ -367,7 +368,9 @@ export function applyPiece(s, x, y) {
   let removed = 0,
     points = 0,
     repaired = 0,
-    quake = false;
+    quake = false,
+    feedbackCells = targets,
+    detonated = false;
   if (type === "raise") {
     // Touch any part of a connected hole and patch the whole puncture first.
     const repair = new Set(targets.filter((i) => s.holes[i])),
@@ -413,10 +416,12 @@ export function applyPiece(s, x, y) {
     } else if (hit) {
       const mines = s.mines.filter((m) => hit.cells.includes(m.i));
       if (mines.length) {
+        detonated = true;
         for (const m of mines) explode(s, m.i % SIZE, Math.floor(m.i / SIZE));
         s.mines = s.mines.filter((m) => !mines.includes(m));
         announce(s, "Mine detonated! Repair the hole.");
       } else {
+        feedbackCells = hit.cells;
         for (const i of hit.cells) {
           removed += s.water[i];
           s.water[i] = 0;
@@ -446,11 +451,14 @@ export function applyPiece(s, x, y) {
   return {
     type,
     piece: committedPiece,
+    contactHeight,
     x,
     y,
     targets,
     removed,
     repaired,
+    feedbackCells,
+    detonated,
     quake,
     earned,
     multiplier: bonus.multiplier,

@@ -24,6 +24,7 @@ import {
   rebaseDrag,
   rotateAim,
 } from "./controls.js";
+import { createSoundBank } from "./audio.js";
 import { createWorldRenderer } from "./renderer.js";
 
 const $ = (id) => document.getElementById(id),
@@ -63,7 +64,6 @@ let cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 },
   dialogKind = "start",
   toastUntil = 0;
 let soundOn = read("rainkeep.sound") === "on",
-  audio,
   best = { daydream: 0, classic: 0 },
   deferredInstall;
 try {
@@ -93,35 +93,9 @@ function record() {
     write(BEST, JSON.stringify(best));
   }
 }
-function tone(type) {
-  if (!soundOn) return;
-  try {
-    audio ??= new (window.AudioContext || window.webkitAudioContext)();
-    audio.resume();
-    const notes =
-      type === "sun"
-        ? [523, 659, 784]
-        : type === "rain"
-          ? [440, 330, 550]
-          : type === "lower"
-            ? [170, 120]
-            : [220, 330];
-    notes.forEach((f, i) => {
-      const o = audio.createOscillator(),
-        g = audio.createGain(),
-        t = audio.currentTime + i * 0.065;
-      o.type = "sine";
-      o.frequency.setValueAtTime(f, t);
-      o.frequency.exponentialRampToValueAtTime(f * 0.85, t + 0.16);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.1, t + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
-      o.connect(g);
-      g.connect(audio.destination);
-      o.start(t);
-      o.stop(t + 0.25);
-    });
-  } catch {}
+const sounds = createSoundBank(soundOn);
+function tone(type, event = {}) {
+  if (soundOn) sounds.play(type, event);
 }
 function soundUI() {
   $("sound-state").textContent = soundOn ? "ON" : "OFF";
@@ -305,11 +279,13 @@ function clampCursor() {
 }
 function drop() {
   if (paused || !accelerateDrop(state)) return;
+  sounds.unlock();
+  tone("drop");
   save();
   ui();
 }
 function land(event) {
-  tone(event.type);
+  tone(event.quake ? "quake" : event.detonated ? "bomb" : event.type, event);
   world.impact(event, state);
   if (event.piece) cursor = rotateAim(cursor, event.piece, state.current);
   if (event.type === "sun")
@@ -339,7 +315,7 @@ function rotate() {
   cursor = rotateAim(cursor, before, state.current);
   world.twist?.();
   rebaseDrag(drag, cursor);
-  tone("raise");
+  tone("rotate");
   save();
   ui();
 }
@@ -501,13 +477,15 @@ $("sound").onclick = () => {
   soundOn = !soundOn;
   write("rainkeep.sound", soundOn ? "on" : "off");
   soundUI();
-  if (soundOn) tone("rain");
+  sounds.setEnabled(soundOn);
+  if (soundOn) sounds.unlock()?.then(() => tone("rain"));
 };
 if (matchMedia("(pointer: coarse)").matches)
   $("input-tip").textContent =
     "Slide to align · Re-touch keeps aim · Arrows: fine trim";
 let focusBeforeModal;
 function showDialog(kind) {
+  sounds.stop();
   if ($("overlay").hidden) focusBeforeModal = document.activeElement;
   dialogKind = kind;
   paused = true;
@@ -576,6 +554,7 @@ function showDialog(kind) {
   start.focus({ preventScroll: true });
 }
 function resume() {
+  sounds.unlock();
   paused = false;
   started = true;
   $("overlay").hidden = true;
@@ -702,6 +681,9 @@ showDialog("start");
 requestAnimationFrame(frame);
 if (import.meta.env.DEV)
   window.__rainkeep = {
+    get sound() {
+      return sounds.stats;
+    },
     get graphics() {
       return { kind: world.kind, view: world.quarter, ...world.stats };
     },

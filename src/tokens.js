@@ -199,6 +199,9 @@ export function createTokenWorkshop() {
       side.scale.set(0.65, 0.82, 0.65);
       side.rotation.z = 0.38;
       side.userData.flame = 3;
+      const embers = new THREE.InstancedMesh(spark, ember, 7);
+      embers.userData.embers = true;
+      g.add(embers);
     } else if (type === "ice") {
       const cube = add(g, ice, iceMat);
       cube.rotation.set(0.1, 0.3, 0.07);
@@ -208,14 +211,43 @@ export function createTokenWorkshop() {
       add(g, drop, glass);
       const glint = add(g, spark, hot, -0.37, 0.25, 0.69);
       glint.scale.set(0.65, 2.7, 0.4);
+      const pearls = new THREE.InstancedMesh(spark, glass, 4);
+      pearls.userData.pearls = true;
+      g.add(pearls);
     }
+    const motion = new THREE.Group();
+    motion.userData.tokenMotion = type;
+    for (const child of [...g.children]) motion.add(child);
+    g.add(motion);
     g.scale.setScalar(type === "sun" ? 1.25 : type === "bomb" ? 1.18 : 1);
     animate(g, 0, true);
     return g;
   }
   const dummy = new THREE.Object3D();
-  function animate(group, time, reduced = false) {
+  function animate(group, time, reduced = false, falling = 0) {
     group.traverse((o) => {
+      if (o.userData.tokenMotion) {
+        const type = o.userData.tokenMotion,
+          t = reduced ? 0 : time;
+        o.position.y = reduced
+          ? 0
+          : Math.sin(t * (type === "rain" ? 4.2 : 2.7)) * 0.09;
+        o.rotation.z = reduced
+          ? 0
+          : Math.sin(t * (type === "bomb" ? 3 : 2.4)) *
+            (type === "rain" ? 0.13 : 0.085);
+        o.rotation.y = reduced
+          ? 0
+          : t * (type === "bomb" ? 0.32 : type === "sun" ? 0.16 : 0.08);
+        const stretch = reduced
+          ? 1
+          : type === "rain"
+            ? 1 + Math.sin(t * 4.2) * 0.045 + falling * 0.18
+            : type === "sun"
+              ? 1 + falling * 0.12
+              : 1;
+        o.scale.set(1 / Math.sqrt(stretch), stretch, 1 / Math.sqrt(stretch));
+      }
       if (o.userData.flame !== undefined) {
         const n = o.userData.flame;
         if (n < 3) {
@@ -232,6 +264,25 @@ export function createTokenWorkshop() {
             0.05 + Math.cos(n * 2.4) * age * 0.4,
           );
           dummy.scale.setScalar((1 - age) * (0.65 + (n % 2) * 0.25));
+          dummy.updateMatrix();
+          o.setMatrixAt(n, dummy.matrix);
+        }
+        o.instanceMatrix.needsUpdate = true;
+      }
+      if (o.userData.embers || o.userData.pearls) {
+        const fire = !!o.userData.embers;
+        for (let n = 0; n < o.count; n++) {
+          const age = reduced
+            ? n / o.count
+            : (time * (fire ? 0.65 : 0.45) + n / o.count) % 1;
+          const angle = n * 2.4 + (reduced ? 0 : time * 0.6),
+            r = fire ? 0.5 + age * 0.35 : 0.95;
+          dummy.position.set(
+            Math.cos(angle) * r,
+            fire ? 0.45 + age * 3 : 1 + age * 0.9,
+            Math.sin(angle) * r,
+          );
+          dummy.scale.setScalar((1 - age) * (fire ? 0.55 : 0.85));
           dummy.updateMatrix();
           o.setMatrixAt(n, dummy.matrix);
         }

@@ -1,12 +1,20 @@
 # Rainkeep art
 
-Edition 06 uses original real-time Three.js geometry for the terrain, irregular rock underside, hanging roots, banks, solid beveled pieces, ducks, mines, rainbow, and impact effects. Decorative edge grass and raised direction spikes have been removed. Flat cream chevrons identify Upper/Downer pieces. Quiet sage ground, lighter elevated tops, and earth-colored slopes with restrained strata make height changes readable without a bitmap ground texture.
+Edition 07 uses original real-time Three.js geometry for the terrain, irregular rock underside, hanging roots, banks, solid beveled pieces, ducks, mines, rainbow, and impact effects. Decorative edge grass and raised direction spikes have been removed. Flat cream chevrons identify Upper/Downer pieces. Quiet sage ground, lighter elevated tops, and earth-colored slopes with restrained strata make height changes readable without a bitmap ground texture.
 
 Bombs have a shaped metal shell, brass band and fittings, curved fuse, and animated sparks. Fireballs use a luminous core and several curved, layered flame volumes with a warm color gradient and subtle motion. Water is a smooth teardrop with a glossy highlight; ice uses a beveled crystalline block. These are modeled geometry rather than generated sprites. Previews render the same models as the board.
 
 Bomb holes remove the corresponding terrain and water triangles, cut through the rock and edge skirt, and expose the sky beneath dark walls and an earth rim. Repairs restore the mesh opening. The soft landing footprint conforms to the ground/water and clips out over holes. Raised banks cast filtered 2048-pixel terrain shadows; falling pieces use the conforming footprint to avoid a second misleading offset shadow.
 
 A custom water shader adds view-dependent reflections, impact ripples, shoreline foam, and ice tint. Warm sun/cool sky lighting connects the island to the painted distant backdrop. Turns ease around the piece center, and terrain grows toward its committed height after contact; reduced-motion mode removes these transitions and token flicker.
+
+## Motion and original sound
+
+Water sways, stretches slightly during a fast drop, and sheds small droplets. Fire has swaying flame volumes and rising embers. Bombs turn and wobble around their center while the fuse sparks. Model bases line up with the contact plane. A small arrival settle gives each new piece a little weight without changing its aim or physics.
+
+Landing feedback is specific to the piece: water splash droplets and concentric rings; fire embers, distributed steam, a short fade of the evaporated lake, and a floating score; bomb debris, smoke, an impact ring, and a restrained camera nudge. Effects freeze when paused, dispose transient resources after finishing, and are capped at sixteen batches. Reduced-motion mode skips these bursts and token movement.
+
+All audio is original procedural Web Audio synthesis in `src/audio.js`: water plops and bubbles, fire whoosh/hiss, a brief scored-evaporation flourish, bomb thumps/crumble, land taps, repair notes, ice chimes, rotation clicks, and a short drop swish. A master gain and compressor control the mix. Sound unlocks from a user gesture, retains the saved on/off preference, and stops active cues when muted or paused. No Wetrix samples or external sound assets are used. The ignored QA WAV is an offline-rendered cue preview; the browser motion recording is silent.
 
 ## Generated sky backdrop
 
