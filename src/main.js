@@ -17,7 +17,13 @@ import {
   QUAKE_LIMIT,
   smartBomb,
 } from "./simulation.js";
-import { clampAim, beginDrag, moveDrag, rebaseDrag } from "./controls.js";
+import {
+  clampAim,
+  beginDrag,
+  moveDrag,
+  rebaseDrag,
+  rotateAim,
+} from "./controls.js";
 import { createWorldRenderer } from "./renderer.js";
 
 const $ = (id) => document.getElementById(id),
@@ -142,6 +148,7 @@ function drawPiece() {
   const key = JSON.stringify(state.current);
   if (key === lastPiece) return;
   lastPiece = key;
+  if (world.preview?.(preview, state.current)) return;
   preview.clearRect(0, 0, 150, 100);
   const pts = cells(state.current),
     minX = Math.min(...pts.map(([x, y]) => x - y)),
@@ -304,6 +311,7 @@ function drop() {
 function land(event) {
   tone(event.type);
   world.impact(event, state);
+  if (event.piece) cursor = rotateAim(cursor, event.piece, state.current);
   if (event.type === "sun")
     toast(
       event.removed > 0.1
@@ -326,8 +334,10 @@ function land(event) {
 }
 function rotate() {
   if (paused || state.over || state.dropping) return;
+  const before = { ...state.current };
   state.current.rotation = (state.current.rotation + 1) % 4;
-  clampCursor();
+  cursor = rotateAim(cursor, before, state.current);
+  world.twist?.();
   rebaseDrag(drag, cursor);
   tone("raise");
   save();
@@ -420,6 +430,7 @@ board.addEventListener("webglcontextlost", () => {
   if (started && !state.over) showDialog("pause");
 });
 board.addEventListener("webglcontextrestored", () => {
+  lastPiece = "";
   toast("Landscape restored. Your run is saved.");
 });
 window.addEventListener("keydown", (e) => {

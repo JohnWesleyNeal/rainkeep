@@ -1,7 +1,47 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { beginDrag, moveDrag, rebaseDrag } from "../src/controls.js";
+import {
+  beginDrag,
+  moveDrag,
+  rebaseDrag,
+  rotateAim,
+  pieceBounds,
+} from "../src/controls.js";
 const piece = { type: "raise", shape: 2, rotation: 0 };
+
+test("rotation preserves the center of asymmetric pieces through all four turns", () => {
+  for (let shape = 0; shape < 8; shape++) {
+    let p = { type: "raise", shape, rotation: 0 },
+      aim = { x: 10.37, y: 11.23 };
+    const initial = { ...aim },
+      bounds = pieceBounds(p),
+      center = { x: aim.x + bounds.width / 2, y: aim.y + bounds.height / 2 };
+    for (let n = 0; n < 4; n++) {
+      const next = { ...p, rotation: (p.rotation + 1) % 4 };
+      aim = rotateAim(aim, p, next);
+      p = next;
+      const b = pieceBounds(p);
+      assert.ok(Math.abs(aim.x + b.width / 2 - center.x) < 1e-9);
+      assert.ok(Math.abs(aim.y + b.height / 2 - center.y) < 1e-9);
+    }
+    assert.ok(
+      Math.abs(aim.x - initial.x) < 1e-9 && Math.abs(aim.y - initial.y) < 1e-9,
+    );
+  }
+});
+
+test("edge rotation clamps safely and the held grip continues from its new origin", () => {
+  const p = { type: "raise", shape: 5, rotation: 0 },
+    next = { ...p, rotation: 1 };
+  const aim = rotateAim({ x: 22, y: 0 }, p, next);
+  const b = pieceBounds(next);
+  assert.ok(
+    aim.x >= 0 && aim.y >= 0 && aim.x + b.width <= 32 && aim.y + b.height <= 32,
+  );
+  const drag = beginDrag({ x: 100, y: 100 }, { x: 22, y: 0 }, 18);
+  rebaseDrag(drag, aim);
+  assert.deepEqual(moveDrag(drag, { x: 100, y: 100 }, next), aim);
+});
 test("touching and re-touching anywhere keeps the existing aim", () => {
   const aim = { x: 7, y: 5 };
   for (const point of [

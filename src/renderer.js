@@ -2,11 +2,12 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { SIZE, cells, landingHeight } from "./simulation.js";
 import groundURL from "./assets/ground.webp";
+import { addIslandBody, solidFootprint } from "./diorama.js";
 
 const HALF = SIZE / 2;
 const palette = {
-  raise: 0xf9977c,
-  lower: 0x9ce5bd,
+  raise: 0xec6847,
+  lower: 0x59c2b0,
   rain: 0x50d9fa,
   sun: 0xffbd58,
   bomb: 0x263f53,
@@ -48,11 +49,11 @@ export function createWorldRenderer(canvas, reduced = false) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1;
+  renderer.toneMappingExposure = 0.92;
   renderer.setClearColor(0x153747, 0);
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-27, 27, 22, -22, 0.1, 180);
-  const hemi = new THREE.HemisphereLight(0xc4efff, 0x435b46, 1.45);
+  const hemi = new THREE.HemisphereLight(0xc4efff, 0x435b46, 1.15);
   scene.add(hemi);
   const key = new THREE.DirectionalLight(0xffe4b6, 2.15);
   key.position.set(-20, 48, 12);
@@ -73,6 +74,32 @@ export function createWorldRenderer(canvas, reduced = false) {
   const fill = new THREE.DirectionalLight(0x7bcbdc, 0.85);
   fill.position.set(20, 9, -30);
   scene.add(fill);
+  const environmentCanvas = document.createElement("canvas");
+  environmentCanvas.width = 512;
+  environmentCanvas.height = 256;
+  const environmentContext = environmentCanvas.getContext("2d");
+  const sky = environmentContext.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, "#c5e5ec");
+  sky.addColorStop(0.45, "#eaf2da");
+  sky.addColorStop(0.6, "#6eafa4");
+  sky.addColorStop(1, "#274858");
+  environmentContext.fillStyle = sky;
+  environmentContext.fillRect(0, 0, 512, 256);
+  const sun = environmentContext.createRadialGradient(350, 72, 0, 350, 72, 52);
+  sun.addColorStop(0, "rgba(255,250,208,1)");
+  sun.addColorStop(0.25, "rgba(255,243,192,.8)");
+  sun.addColorStop(1, "rgba(255,240,190,0)");
+  environmentContext.fillStyle = sun;
+  environmentContext.fillRect(0, 0, 512, 256);
+  const environment = new THREE.CanvasTexture(environmentCanvas);
+  environment.colorSpace = THREE.SRGBColorSpace;
+  environment.mapping = THREE.EquirectangularReflectionMapping;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  let environmentTarget = pmrem.fromEquirectangular(environment);
+  scene.environment = environmentTarget.texture;
+  scene.environmentIntensity = 0.32;
+  pmrem.dispose();
+  environment.dispose();
   let width = 0,
     height = 0,
     quarter = 0,
@@ -83,8 +110,11 @@ export function createWorldRenderer(canvas, reduced = false) {
     piece = new THREE.Group(),
     fx = [],
     shake = 0;
+  let turnAngle = 0,
+    dirty = true;
+  const displayHeights = new Float32Array(SIZE * SIZE);
   scene.add(piece);
-  const target = new THREE.Vector3(0, 3.6, 0);
+  const target = new THREE.Vector3(0, 1.1, 0);
   function positionCamera() {
     const angle = Math.PI / 4 - (quarter * Math.PI) / 2;
     camera.position.set(Math.cos(angle) * 59.4, 38, Math.sin(angle) * 59.4);
@@ -130,6 +160,15 @@ export function createWorldRenderer(canvas, reduced = false) {
       metalness: 0,
     }),
   );
+  terrain.material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <map_fragment>",
+      THREE.ShaderChunk.map_fragment.replace(
+        "diffuseColor *= sampledDiffuseColor;",
+        "diffuseColor *= vec4(mix(vec3(.28,.43,.13), sampledDiffuseColor.rgb, .24), sampledDiffuseColor.a);",
+      ),
+    );
+  };
   terrain.receiveShadow = true;
   scene.add(terrain);
 
@@ -153,26 +192,7 @@ export function createWorldRenderer(canvas, reduced = false) {
   );
   cliff.receiveShadow = true;
   scene.add(cliff);
-  const rock = new THREE.Mesh(
-    new RoundedBoxGeometry(32, 2.4, 32, 2, 0.65),
-    new THREE.MeshStandardMaterial({ color: 0x354e54, roughness: 0.85 }),
-  );
-  rock.position.y = -3.2;
-  rock.receiveShadow = true;
-  scene.add(rock);
-  const seam = new THREE.Mesh(
-    new RoundedBoxGeometry(31.9, 0.16, 31.9, 1, 0.06),
-    new THREE.MeshStandardMaterial({ color: 0x85c0ac, roughness: 0.7 }),
-  );
-  seam.position.y = -2.8;
-  scene.add(seam);
-  const underside = new THREE.Mesh(
-    new THREE.CylinderGeometry(22.2, 12, 4.4, 4, 1),
-    new THREE.MeshStandardMaterial({ color: 0x223c49, roughness: 0.9 }),
-  );
-  underside.rotation.y = Math.PI / 4;
-  underside.position.y = -6.4;
-  scene.add(underside);
+  addIslandBody(scene);
 
   const waterGeometry = terrainGeometry.clone();
   const waterPositions = waterGeometry.attributes.position.array;
@@ -186,7 +206,16 @@ export function createWorldRenderer(canvas, reduced = false) {
     new THREE.BufferAttribute(new Float32Array((SIZE + 1) ** 2), 1),
   );
   const waterMaterial = new THREE.ShaderMaterial({
-    uniforms: { time: { value: 0 } },
+    uniforms: {
+      time: { value: 0 },
+      eye: { value: camera.position },
+      ripples: {
+        value: Array.from(
+          { length: 4 },
+          () => new THREE.Vector4(0, 0, -100, 0),
+        ),
+      },
+    },
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -195,19 +224,38 @@ export function createWorldRenderer(canvas, reduced = false) {
       void main() { world = (modelMatrix * vec4(position,1.)).xyz;
         amount = depth; frost = frozen;
         gl_Position = projectionMatrix * viewMatrix * vec4(world,1.); }`,
-    fragmentShader: `uniform float time; varying vec3 world; varying float amount; varying float frost;
+    fragmentShader: `uniform float time; uniform vec3 eye; uniform vec4 ripples[4];
+      varying vec3 world; varying float amount; varying float frost;
       void main() {
         if (amount < .035) discard;
-        float wave = sin(world.x*.8 + time*.8) * sin(world.z*.6 - time*.6);
-        float glint = pow(max(0., sin(world.x*.19 + world.z*.25 + wave*.12)), 26.);
-        float ribbons = pow(max(0., sin(world.x*2. + world.z*.65 + time*.55)), 18.)*.045;
-        vec3 deep = vec3(.015,.27,.43), shallow = vec3(.07,.55,.62);
-        vec3 col = mix(shallow,deep, smoothstep(.2,3.,amount));
-        col += vec3(.38,.53,.56)*glint*.55 + ribbons;
-        float edge = 1. - smoothstep(.04,.38,amount);
-        col = mix(col,vec3(.73,.96,.84),edge*.55);
-        col = mix(col,vec3(.65,.88,.94) + glint*.14,clamp(frost,0.,1.));
-        gl_FragColor = vec4(col, smoothstep(.035,.16,amount)*.94);
+        vec2 slope = vec2(cos(world.x*.81 + world.z*.47 + time*.67),
+          sin(world.z*.73 - world.x*.54 - time*.53)) * .045 * (1.-frost);
+        float rings = 0.;
+        for(int i=0;i<4;i++) {
+          float age=time-ripples[i].z, dist=distance(world.xz,ripples[i].xy);
+          if(age>=0.&&age<3.) {
+            float ring=sin(dist*3.4-age*9.)*exp(-abs(dist-age*3.)*1.6)*exp(-age*1.3)*ripples[i].w;
+            slope += normalize(world.xz-ripples[i].xy+vec2(.001))*ring*.11;
+            rings += abs(ring)*.035;
+          }
+        }
+        vec3 normal=normalize(vec3(slope.x,1.,slope.y)), view=normalize(eye-world);
+        vec3 reflected=reflect(-view,normal);
+        float fresnel=pow(1.-max(dot(normal,view),0.),4.);
+        vec3 deep=vec3(.008,.13,.21), shallow=vec3(.035,.38,.37);
+        vec3 col=mix(shallow,deep,smoothstep(.2,3.5,amount));
+        vec3 sky=mix(vec3(.12,.37,.49),vec3(.69,.87,.8),smoothstep(.05,.8,reflected.y));
+        col=mix(col,sky,.12+fresnel*.65);
+        float sun=pow(max(0.,dot(reflected,normalize(vec3(-.62,.53,-.62)))),240.);
+        col += vec3(1.,.89,.65)*sun*.11 + rings;
+        float caustic=pow(abs(sin(world.x*1.7+sin(world.z*.9+time*.3))*sin(world.z*1.9+sin(world.x*.8-time*.2))),6.);
+        col += caustic*.014 * (1.-frost);
+        float edge=(1.-smoothstep(.04,.22,amount))*(.55+.15*sin(world.x*4.+world.z*3.));
+        col=mix(col,vec3(.73,.92,.79),edge*.38);
+        float crystal=pow(abs(sin(world.x*3.+world.z*2.)*sin(world.z*4.-world.x)),12.);
+        col=mix(col,vec3(.51,.78,.84)+crystal*.13,frost);
+        col *= vec3(.48,.75,.88);
+        gl_FragColor = vec4(col, smoothstep(.035,.13,amount)*.97);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -215,10 +263,12 @@ export function createWorldRenderer(canvas, reduced = false) {
   const water = new THREE.Mesh(waterGeometry, waterMaterial);
   water.renderOrder = 2;
   scene.add(water);
+  let rippleIndex = 0,
+    worldTime = 0;
 
   const stone = new THREE.InstancedMesh(
     new THREE.DodecahedronGeometry(0.25, 0),
-    new THREE.MeshStandardMaterial({ color: 0xbcc9ae, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0x658b73, roughness: 1 }),
     50,
   );
   const dummy = new THREE.Object3D();
@@ -227,7 +277,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       t = (n / 50) * 32 - 16;
     dummy.position.set(
       side < 2 ? t : side === 2 ? -16.03 : 16.03,
-      -0.8 - (n % 5) * 0.35,
+      -1.1 - (n % 5) * 0.45,
       side < 2 ? (side === 0 ? -16.03 : 16.03) : t,
     );
     dummy.scale.set(1 + (n % 3), 0.6, 1);
@@ -273,7 +323,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       -10 - (n % 3) * 4,
       (Math.floor(n / 5) * 2 - 1) * 24,
     );
-    sprite.scale.set(20, 7, 1);
+    sprite.scale.set(22, 8, 1);
     clouds.add(sprite);
   }
   scene.add(clouds);
@@ -363,7 +413,6 @@ export function createWorldRenderer(canvas, reduced = false) {
       );
     return materialCache.get(type);
   }
-  const blockGeometry = new RoundedBoxGeometry(1.91, 0.62, 1.91, 2, 0.13);
   const coneGeometry = new THREE.ConeGeometry(0.24, 0.75, 4);
   const sphereGeometry = new THREE.SphereGeometry(0.84, 20, 14);
   const smallSphere = new THREE.SphereGeometry(0.19, 8, 6);
@@ -454,6 +503,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     // Token geometry/materials are shared; only unique land instance buffers go.
     group.traverse((o) => {
       if (o.isInstancedMesh) o.dispose();
+      if (o.userData.uniqueGeometry) o.geometry.dispose();
     });
     group.clear();
   }
@@ -467,23 +517,21 @@ export function createWorldRenderer(canvas, reduced = false) {
       h = Math.max(...shape.map((p) => p[1])) + 1;
     if (p.type === "raise" || p.type === "lower") {
       const anchors = shape.filter(([x, y]) => x % 2 === 0 && y % 2 === 0);
-      const blocks = new THREE.InstancedMesh(
-        blockGeometry,
-        material(p.type),
-        anchors.length,
-      );
+      const blocks = new THREE.Mesh(solidFootprint(shape), material(p.type));
+      blocks.rotation.x = -Math.PI / 2;
+      blocks.position.set(-w / 2, 0, -h / 2);
+      blocks.userData.uniqueGeometry = true;
       const arrows = new THREE.InstancedMesh(
         coneGeometry,
         material(p.type),
         anchors.length,
       );
       anchors.forEach(([x, y], n) => {
-        dummy.position.set(x + 1, 0.12, y + 1);
+        dummy.position.set(x + 1 - w / 2, 1.05, y + 1 - h / 2);
         dummy.scale.set(1, 1, 1);
         dummy.rotation.set(0, 0, 0);
         dummy.updateMatrix();
-        blocks.setMatrixAt(n, dummy.matrix);
-        dummy.position.y = p.type === "raise" ? 0.78 : -0.55;
+        dummy.position.y = 1.05;
         dummy.rotation.z = p.type === "raise" ? 0 : Math.PI;
         dummy.rotation.y = Math.PI / 4;
         dummy.updateMatrix();
@@ -494,7 +542,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       piece.add(blocks, arrows);
     } else {
       const token = makeToken(p.type);
-      token.position.set(0.5, 0.1, 0.5);
+      token.position.set(0.5 - w / 2, 0.1, 0.5 - h / 2);
       piece.add(token);
     }
     shadowMaterial.map?.dispose();
@@ -532,9 +580,13 @@ export function createWorldRenderer(canvas, reduced = false) {
     return sum / count;
   };
   const holesHeight = new Float32Array(SIZE * SIZE);
-  function updateLandscape(s) {
-    for (let i = 0; i < s.terrain.length; i++)
-      holesHeight[i] = s.holes[i] ? -1.8 : s.terrain[i];
+  function updateLandscape(s, dt) {
+    const blend = reduced || s !== lastState ? 1 : 1 - Math.exp(-dt * 19);
+    for (let i = 0; i < s.terrain.length; i++) {
+      const target = s.holes[i] ? -1.8 : s.terrain[i];
+      displayHeights[i] += (target - displayHeights[i]) * blend;
+      holesHeight[i] = displayHeights[i];
+    }
     for (let y = 0; y <= SIZE; y++)
       for (let x = 0; x <= SIZE; x++) {
         const v = y * (SIZE + 1) + x,
@@ -609,13 +661,13 @@ export function createWorldRenderer(canvas, reduced = false) {
         const [p, q] = endpoints,
           A = [p[0] - HALF, sample(holesHeight, ...p), p[1] - HALF],
           B = [q[0] - HALF, sample(holesHeight, ...q), q[1] - HALF];
-        const C = [B[0], -2.4, B[2]],
-          D = [A[0], -2.4, A[2]];
+        const C = [B[0], -1.23, B[2]],
+          D = [A[0], -1.23, A[2]];
         for (const pt of [A, B, D, B, C, D]) {
           cliffPositions.set(pt, n * 3);
-          const upper = pt[1] > -2;
+          const upper = pt[1] > -1;
           cliffColors.set(
-            upper ? [0.41, 0.49, 0.36] : [0.25, 0.34, 0.31],
+            upper ? [0.42, 0.45, 0.25] : [0.23, 0.27, 0.19],
             n * 3,
           );
           n++;
@@ -657,6 +709,15 @@ export function createWorldRenderer(canvas, reduced = false) {
   const ringGeometry = new THREE.TorusGeometry(1, 0.025, 4, 40);
   const moteGeometry = new THREE.SphereGeometry(0.08, 6, 4);
   function impact(event, s) {
+    turnAngle = 0;
+    if (!reduced && (event.type === "rain" || event.type === "sun")) {
+      waterMaterial.uniforms.ripples.value[rippleIndex++ % 4].set(
+        (event.x ?? 0) - HALF + 0.5,
+        (event.y ?? 0) - HALF + 0.5,
+        worldTime,
+        event.type === "rain" ? 1 : 0.6,
+      );
+    }
     if (reduced) return;
     const x = event.x ?? event.targets[0] % SIZE,
       y = event.y ?? Math.floor(event.targets[0] / SIZE);
@@ -711,7 +772,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     scene.add(motes);
     fx.push({ mesh: motes, life: 0.75, max: 0.75, particles });
     if (event.quake) shake = 0.65;
-    lastUpdate = -1;
+    dirty = true;
   }
   const raycaster = new THREE.Raycaster(),
     plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
@@ -736,7 +797,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     width = r.width;
     height = r.height;
     renderer.setSize(width, height, false);
-    const span = Math.max(54, (38 * width) / height);
+    const span = Math.max(51, (38 * width) / height);
     camera.left = -span / 2;
     camera.right = span / 2;
     camera.top = (span * height) / width / 2;
@@ -745,20 +806,28 @@ export function createWorldRenderer(canvas, reduced = false) {
     return width / span / Math.sqrt(2);
   }
   function render(s, aim, time, dt, options) {
+    worldTime = time;
     elapsed += dt;
-    if (s !== lastState || elapsed - lastUpdate > 0.085) {
-      updateLandscape(s);
+    if (s !== lastState || dirty || elapsed - lastUpdate > 0.034) {
+      updateLandscape(s, Math.max(0.001, elapsed - lastUpdate));
       lastUpdate = elapsed;
       lastState = s;
+      dirty = false;
     }
     updatePiece(s.current);
     piece.visible = options.showPiece && !s.over;
     piece.position.set(
-      aim.x - HALF,
+      aim.x - HALF + shadow.userData.w / 2,
       Math.max(s.altitude, landingHeight(s, aim)),
-      aim.y - HALF,
+      aim.y - HALF + shadow.userData.h / 2,
     );
+    if (!options.paused) turnAngle *= Math.exp(-dt * 24);
+    piece.rotation.y = turnAngle;
     shadow.visible = piece.visible;
+    shadowMaterial.opacity = Math.max(
+      0.15,
+      0.36 - (s.altitude - landingHeight(s, aim)) * 0.015,
+    );
     shadow.position.set(
       aim.x - HALF + shadow.userData.w / 2,
       landingHeight(s, aim) + 0.055,
@@ -850,12 +919,82 @@ export function createWorldRenderer(canvas, reduced = false) {
     } else camera.clearViewOffset();
     renderer.render(scene, camera);
   }
+  const previewScene = new THREE.Scene();
+  previewScene.environment = scene.environment;
+  previewScene.add(new THREE.HemisphereLight(0xe9f7f5, 0x65705d, 2));
+  const previewLight = new THREE.DirectionalLight(0xffe6b6, 2);
+  previewLight.position.set(-5, 12, 8);
+  previewScene.add(previewLight);
+  const previewCamera = new THREE.OrthographicCamera(-6, 6, 4, -4, 0.1, 100);
+  previewCamera.position.set(18, 16, 18);
+  previewCamera.lookAt(0, 0, 0);
+  const previewTarget = new THREE.WebGLRenderTarget(150, 100, { samples: 2 });
+  previewTarget.texture.colorSpace = THREE.SRGBColorSpace;
+  const previewPixels = new Uint8Array(150 * 100 * 4);
+  canvas.addEventListener("webglcontextrestored", () => {
+    environmentTarget.dispose();
+    const source = new THREE.CanvasTexture(environmentCanvas);
+    source.colorSpace = THREE.SRGBColorSpace;
+    source.mapping = THREE.EquirectangularReflectionMapping;
+    const generator = new THREE.PMREMGenerator(renderer);
+    environmentTarget = generator.fromEquirectangular(source);
+    scene.environment = previewScene.environment = environmentTarget.texture;
+    generator.dispose();
+    source.dispose();
+  });
+  function drawPreview(context, p) {
+    updatePiece(p);
+    const clone = piece.clone(),
+      { w, h } = shadow.userData;
+    clone.position.set(0, 0, 0);
+    clone.rotation.y = 0;
+    clone.visible = true;
+    previewScene.add(clone);
+    const span = Math.max(5, (w + h) * 0.62);
+    previewCamera.left = -span * 0.75;
+    previewCamera.right = span * 0.75;
+    previewCamera.top = span / 2;
+    previewCamera.bottom = -span / 2;
+    previewCamera.updateProjectionMatrix();
+    const previousTarget = renderer.getRenderTarget(),
+      previousShadows = renderer.shadowMap.enabled;
+    renderer.shadowMap.enabled = false;
+    renderer.setRenderTarget(previewTarget);
+    renderer.clear();
+    renderer.render(previewScene, previewCamera);
+    renderer.readRenderTargetPixels(
+      previewTarget,
+      0,
+      0,
+      150,
+      100,
+      previewPixels,
+    );
+    renderer.setRenderTarget(previousTarget);
+    renderer.shadowMap.enabled = previousShadows;
+    const output = context.createImageData(150, 100);
+    for (let y = 0; y < 100; y++)
+      output.data.set(
+        previewPixels.subarray((99 - y) * 600, (100 - y) * 600),
+        y * 600,
+      );
+    context.putImageData(output, 0, 0);
+    previewScene.remove(clone);
+    clone.traverse((o) => {
+      if (o.isInstancedMesh) o.dispose();
+    });
+    return true;
+  }
   return {
     kind: "webgl",
     resize,
     render,
     pick,
     impact,
+    preview: drawPreview,
+    twist() {
+      if (!reduced) turnAngle += Math.PI / 2;
+    },
     get quarter() {
       return quarter;
     },
@@ -867,6 +1006,8 @@ export function createWorldRenderer(canvas, reduced = false) {
       return {
         calls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
+        rotationAngle: turnAngle,
+        terrainPeak: displayHeights.reduce((n, h) => Math.max(n, h), 0),
       };
     },
     clear() {
@@ -878,6 +1019,10 @@ export function createWorldRenderer(canvas, reduced = false) {
       fx = [];
       shake = 0;
       lastUpdate = -1;
+      dirty = true;
+      lastState = undefined;
+      turnAngle = 0;
+      waterMaterial.uniforms.ripples.value.forEach((v) => v.set(0, 0, -100, 0));
     },
   };
 }

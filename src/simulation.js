@@ -358,6 +358,7 @@ export function smartBomb(s) {
 }
 export function applyPiece(s, x, y) {
   if (s.over || !validPlacement(s.current, x, y)) return null;
+  const committedPiece = { ...s.current };
   const type = s.current.type,
     coverage = footprint(s.current, x, y),
     targets = coverage.map(({ i }) => i),
@@ -444,6 +445,7 @@ export function applyPiece(s, x, y) {
   s.dropping = false;
   return {
     type,
+    piece: committedPiece,
     x,
     y,
     targets,

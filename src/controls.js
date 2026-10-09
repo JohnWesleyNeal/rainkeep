@@ -1,5 +1,27 @@
 import { SIZE, cells } from "./simulation.js";
 
+export function pieceBounds(piece) {
+  const shape = cells(piece);
+  return {
+    width: Math.max(...shape.map((p) => p[0])) + 1,
+    height: Math.max(...shape.map((p) => p[1])) + 1,
+  };
+}
+
+// Keep the visible center under the hand when a long shape turns. Only the
+// board boundary may push it inward; rotation must not relocate it arbitrarily.
+export function rotateAim(aim, before, after) {
+  const a = pieceBounds(before),
+    b = pieceBounds(after);
+  return clampAim(
+    {
+      x: aim.x + (a.width - b.width) / 2,
+      y: aim.y + (a.height - b.height) / 2,
+    },
+    after,
+  );
+}
+
 export function clampAim(aim, piece) {
   const shape = cells(piece);
   return {

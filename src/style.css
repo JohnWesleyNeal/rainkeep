@@ -123,12 +123,9 @@ button:active {
   border: 1px solid #a0d6d01c;
   border-radius: 24px;
   overflow: hidden;
-  background: radial-gradient(
-    ellipse at 52% 36%,
-    #3b737d55 0,
-    #24506150 36%,
-    #163747 78%
-  );
+  background:
+    linear-gradient(180deg, #153c5010, #163b4c18),
+    url("./assets/sky.webp") center/cover;
   box-shadow:
     inset 0 1px 0 #ffffff08,
     0 20px 60px #061e2726;
@@ -148,7 +145,7 @@ button:active {
   justify-content: space-between;
   font-size: 8px;
   letter-spacing: 1px;
-  color: #adcac6;
+  color: #224e59;
   gap: 10px;
   position: relative;
   z-index: 1;
@@ -156,9 +153,10 @@ button:active {
 .board-topline {
   padding: 17px 20px 0;
   min-height: 31px;
+  text-shadow: 0 1px 2px #f9ffe5b3;
 }
 .board-topline > span:first-child {
-  color: #e4eee0;
+  color: #224e59;
   white-space: nowrap;
 }
 .live-dot {
@@ -172,15 +170,16 @@ button:active {
 }
 .board-caption {
   padding: 8px 18px 14px;
+  color: #cde3dc;
 }
 .view-btn {
-  background: #ffffff08;
-  border: 1px solid #ffffff22;
+  background: #0d344c6e;
+  border: 1px solid #d6efd33b;
   border-radius: 20px;
   padding: 8px 13px;
   font-size: 10px;
   letter-spacing: 0.3px;
-  color: #c1d9d4;
+  color: #e3eedc;
 }
 .view-btn:hover {
   background: #ffffff15;
@@ -1215,5 +1214,16 @@ footer > span:nth-child(2) {
   * {
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+@media (max-width: 650px) and (min-height: 741px) {
+  .masthead {
+    height: 54px;
+  }
+  .landscape > canvas {
+    height: 350px;
+  }
+  footer {
+    display: none;
   }
 }
