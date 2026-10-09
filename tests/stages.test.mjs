@@ -249,3 +249,15 @@ test("stage holds reset across breaches, ice waits for Fire, and drain limits fa
   stepStage(drain, null, 0);
   assert.equal(drain.campaign.status, "failed");
 });
+
+test("expired one-time opportunities end the stage instead of leaving an impossible objective", () => {
+  const mine = createStage(8);
+  mine.ice.fill(0);
+  mine.mines[0].ttl = 0.001;
+  stepStage(mine, tick(mine, 1 / 30, mine.aim), 1 / 30);
+  assert.equal(mine.campaign.status, "failed");
+  const recovery = createStage(9);
+  recovery.elapsed = 45.1;
+  stepStage(recovery, tick(recovery, 1 / 30, recovery.aim), 1 / 30);
+  assert.equal(recovery.campaign.status, "failed");
+});

@@ -331,6 +331,8 @@ export function stepStage(s, event, dt) {
         : 0;
   if (
     s.over ||
+    (d.detonations && c.detonations < d.detonations && !s.mines.length) ||
+    (d.recoveries && c.recoveries < d.recoveries && !s.recovery) ||
     (d.maxDrain && c.worstDrain >= d.maxDrain) ||
     (d.noQuake && s.quakes > c.startingQuakes)
   ) {

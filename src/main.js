@@ -680,7 +680,7 @@ function showDialog(kind) {
       "STAGE " + (state.campaign.id + 1) + " · TRY AGAIN";
     title.innerHTML = "Another<br><em>little try.</em>";
     const d = STAGES[state.campaign.id];
-    copy.innerHTML = `<b>${d.name}</b><br>${state.turn >= state.campaign.budget ? "The last piece landed before the goal was complete." : d.noQuake && state.quakes > state.campaign.startingQuakes ? "An earthquake ended this challenge." : d.maxDrain && state.campaign.worstDrain >= d.maxDrain ? "The drain crossed this stage’s limit." : "The drain filled."}<br>${d.goal}`;
+    copy.innerHTML = `<b>${d.name}</b><br>${state.turn >= state.campaign.budget ? "The last piece landed before the goal was complete." : d.noQuake && state.quakes > state.campaign.startingQuakes ? "An earthquake ended this challenge." : d.maxDrain && state.campaign.worstDrain >= d.maxDrain ? "The drain crossed this stage’s limit." : d.detonations && state.campaign.detonations < d.detonations && !state.mines.length ? "The mine expired before you caught it with Fire." : d.recoveries && state.campaign.recoveries < d.recoveries && !state.recovery ? "The recovery window closed before the lake was safe." : "The drain filled."}<br>${d.goal}`;
     start.textContent = "Retry this stage ↗";
     $("modal-foot").textContent = d.hint;
   } else if (kind === "start" || kind === "new") {
@@ -769,7 +769,10 @@ function newGame() {
   dangerBand = 0;
   toast(
     state.campaign
-      ? STAGES[state.campaign.id].goal
+      ? "Stage " +
+          (state.campaign.id + 1) +
+          " · " +
+          STAGES[state.campaign.id].name
       : state.mode === "classic"
         ? "Flat and dry. Build your own lakes before water arrives."
         : "Practice lake ready. Pieces wait for Drop.",
