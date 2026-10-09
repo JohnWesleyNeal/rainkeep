@@ -552,8 +552,28 @@ export function createWorldRenderer(canvas, reduced = false) {
         if (z < -0.1) color.multiplyScalar(0.43);
         color.offsetHSL(0, 0, mottling);
         color.toArray(colors, v * 3);
+        // Dry banks must not lift the liquid surface. Average the actual
+        // free-surface heights of wet neighbors; depth testing clips the shore.
+        let surface = 0,
+          wetCount = 0;
+        for (let dy = -1; dy <= 0; dy++)
+          for (let dx = -1; dx <= 0; dx++) {
+            const cx = x + dx,
+              cy = y + dy,
+              i = cy * SIZE + cx;
+            if (
+              cx >= 0 &&
+              cy >= 0 &&
+              cx < SIZE &&
+              cy < SIZE &&
+              s.water[i] > 0.035
+            ) {
+              surface += s.terrain[i] + s.water[i];
+              wetCount++;
+            }
+          }
         waterPositions[v * 3 + 1] =
-          Math.max(0, sample(s.terrain, x, y)) + depth + 0.035;
+          (wetCount ? surface / wetCount : Math.max(0, z)) + 0.035;
         waterGeometry.attributes.depth.array[v] = depth;
         waterGeometry.attributes.frozen.array[v] = frozen > 0 ? 1 : 0;
       }
