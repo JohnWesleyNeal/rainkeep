@@ -1,9 +1,10 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { SIZE, cells, landingHeight } from "./simulation.js";
+import { SIZE, cells, landingHeight, waterBubbles } from "./simulation.js";
 import { createImpactFeedback } from "./feedback.js";
 import { createTokenWorkshop } from "./tokens.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { createCraters } from "./craters.js";
+import { drawWaterBubble } from "./bubble-canvas.js";
 import { addIslandBody, solidFootprint } from "./diorama.js";
 
 const HALF = SIZE / 2;
@@ -28,7 +29,7 @@ function texture(draw, size = 256) {
 
 export function createWorldRenderer(canvas, reduced = false) {
   if (new URLSearchParams(location.search).get("graphics") === "canvas")
-    return createCanvasRenderer(canvas);
+    return createCanvasRenderer(canvas, reduced);
   let renderer;
   try {
     const context = canvas.getContext("webgl2", {
@@ -36,7 +37,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       alpha: true,
       powerPreference: "low-power",
     });
-    if (!context) return createCanvasRenderer(canvas);
+    if (!context) return createCanvasRenderer(canvas, reduced);
     renderer = new THREE.WebGLRenderer({
       canvas,
       context,
@@ -45,7 +46,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       powerPreference: "low-power",
     });
   } catch {
-    return createCanvasRenderer(canvas);
+    return createCanvasRenderer(canvas, reduced);
   }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.65));
   renderer.shadowMap.enabled = true;
@@ -177,8 +178,6 @@ export function createWorldRenderer(canvas, reduced = false) {
       vec3 earth=mix(vec3(.33,.22,.12),vec3(.53,.39,.22),smoothstep(0.,6.,vGroundPosition.y));
       earth *= 1.-strata*.12;
       diffuseColor.rgb=mix(diffuseColor.rgb,earth,slope*.9);
-      float pit=1.-smoothstep(-.85,-.12,vGroundPosition.y);
-      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.012,.023,.03),pit);
     `,
     );
   };
@@ -238,7 +237,10 @@ export function createWorldRenderer(canvas, reduced = false) {
       );
     };
   }
-  [island.body.material, cliff.material].forEach(cutHoles);
+  [island.body.material, island.roots.material, cliff.material].forEach(
+    cutHoles,
+  );
+  const craters = createCraters(scene);
 
   const waterGeometry = terrainGeometry.clone();
   const waterPositions = waterGeometry.attributes.position.array;
@@ -289,19 +291,21 @@ export function createWorldRenderer(canvas, reduced = false) {
         vec3 normal=normalize(vec3(slope.x,1.,slope.y)), view=normalize(eye-world);
         vec3 reflected=reflect(-view,normal);
         float fresnel=pow(1.-max(dot(normal,view),0.),4.);
-        vec3 deep=vec3(.008,.13,.21), shallow=vec3(.035,.38,.37);
-        vec3 col=mix(shallow,deep,smoothstep(.2,3.5,amount));
+        vec3 shallow=vec3(.06,.58,.76), middle=vec3(.008,.14,.48), deep=vec3(.018,.025,.15);
+        vec3 col=mix(shallow,middle,smoothstep(.12,1.4,amount));
+        col=mix(col,deep,smoothstep(1.4,3.7,amount));
         vec3 sky=mix(vec3(.12,.37,.49),vec3(.69,.87,.8),smoothstep(.05,.8,reflected.y));
-        col=mix(col,sky,.12+fresnel*.65);
+        col=mix(col,sky,.06+fresnel*.3);
         float sun=pow(max(0.,dot(reflected,normalize(vec3(-.62,.53,-.62)))),240.);
         col += vec3(1.,.89,.65)*sun*.11 + rings;
         float caustic=pow(abs(sin(world.x*1.7+sin(world.z*.9+time*.3))*sin(world.z*1.9+sin(world.x*.8-time*.2))),6.);
         col += caustic*.014 * (1.-frost);
-        float edge=(1.-smoothstep(.04,.22,amount))*(.55+.15*sin(world.x*4.+world.z*3.));
-        col=mix(col,vec3(.73,.92,.79),edge*.38);
+        float edge=1.-smoothstep(.04,.26,amount);
+        col=mix(col,vec3(.71,.97,1.),edge*.7);
+        float contour=1.-smoothstep(.025,.09,abs(fract(amount/.7)-.5));
+        col+=vec3(.055,.09,.1)*contour*(1.-frost);
         float crystal=pow(abs(sin(world.x*3.+world.z*2.)*sin(world.z*4.-world.x)),12.);
         col=mix(col,vec3(.51,.78,.84)+crystal*.13,frost);
-        col *= vec3(.48,.75,.88);
         gl_FragColor = vec4(col, smoothstep(.035,.13,amount)*.97*fade);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -334,11 +338,11 @@ export function createWorldRenderer(canvas, reduced = false) {
   }
   scene.add(stone);
   const streams = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.055, 0.12, 1, 5),
+    new THREE.CylinderGeometry(0.11, 0.19, 1, 6),
     new THREE.MeshBasicMaterial({
       color: 0x80d9db,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.7,
       depthWrite: false,
     }),
     128,
@@ -476,7 +480,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     group.clear();
   }
   function updatePiece(p) {
-    const next = `${p.type}/${p.shape}/${p.rotation}`;
+    const next = `${p.type}/${p.shape}/${p.rotation}/${p.waterSize ?? "legacy"}`;
     if (next === pieceKey) return;
     pieceKey = next;
     disposeGroup(piece);
@@ -484,36 +488,18 @@ export function createWorldRenderer(canvas, reduced = false) {
       w = Math.max(...shape.map((p) => p[0])) + 1,
       h = Math.max(...shape.map((p) => p[1])) + 1;
     if (p.type === "raise" || p.type === "lower") {
-      const anchors = shape.filter(([x, y]) => x % 2 === 0 && y % 2 === 0);
       const blocks = new THREE.Mesh(solidFootprint(shape), material(p.type));
       blocks.rotation.x = -Math.PI / 2;
       blocks.position.set(-w / 2, 0, -h / 2);
       blocks.userData.uniqueGeometry = true;
-      const markerGeometries = [];
-      for (const [x, y] of anchors)
-        for (const sign of [-1, 1]) {
-          const bar = new THREE.BoxGeometry(0.13, 0.025, 0.66);
-          bar.rotateY(((sign * Math.PI) / 4) * (p.type === "lower" ? -1 : 1));
-          const direction = p.type === "raise" ? -1 : 1;
-          bar.translate(
-            x + 1 - w / 2 + sign * 0.2,
-            0.74,
-            y + 1 - h / 2 + direction * 0.1,
-          );
-          markerGeometries.push(bar);
-        }
-      const markers = new THREE.Mesh(
-        mergeGeometries(markerGeometries),
-        new THREE.MeshBasicMaterial({ color: 0xffefd4 }),
-      );
-      markers.userData.uniqueGeometry = true;
-      markers.userData.uniqueMaterial = true;
-      markerGeometries.forEach((g) => g.dispose());
-      piece.add(blocks, markers);
+      piece.add(blocks);
     } else {
-      const token = makeToken(p.type);
+      const token = makeToken(
+        p.type,
+        p.type === "rain" ? waterBubbles(p) : undefined,
+      );
       token.userData.baseLift =
-        p.type === "bomb" ? 1.275 : p.type === "sun" ? 1.08 : 1.05;
+        p.type === "bomb" ? 1.275 : p.type === "sun" ? 1.7 : 1;
       token.position.set(
         0.5 - w / 2,
         token.userData.baseLift + 0.05,
@@ -594,7 +580,31 @@ export function createWorldRenderer(canvas, reduced = false) {
           holeCoverage = sample(s.holes, x, y),
           z =
             holeCoverage > 0 && holeCoverage < 1
-              ? -2.4
+              ? (() => {
+                  let height = 0,
+                    count = 0;
+                  for (const [dx, dy] of [
+                    [-1, -1],
+                    [0, -1],
+                    [-1, 0],
+                    [0, 0],
+                  ]) {
+                    const cx = x + dx,
+                      cy = y + dy,
+                      i = cy * SIZE + cx;
+                    if (
+                      cx >= 0 &&
+                      cy >= 0 &&
+                      cx < SIZE &&
+                      cy < SIZE &&
+                      !s.holes[i]
+                    ) {
+                      height += displayHeights[i];
+                      count++;
+                    }
+                  }
+                  return count ? height / count : 0;
+                })()
               : sample(holesHeight, x, y),
           depth = sample(s.water, x, y),
           frozen = sample(s.ice, x, y);
@@ -603,7 +613,6 @@ export function createWorldRenderer(canvas, reduced = false) {
           .copy(grass)
           .lerp(high, Math.min(1, Math.max(0, z) / 4))
           .lerp(wet, Math.min(0.35, depth * 0.18));
-        if (z < -0.1) color.multiplyScalar(0.43);
         color.toArray(colors, v * 3);
         // Dry banks must not lift the liquid surface. Average the actual
         // free-surface heights of wet neighbors; depth testing clips the shore.
@@ -633,6 +642,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     terrainGeometry.attributes.position.needsUpdate = true;
     terrainGeometry.attributes.color.needsUpdate = true;
     terrainGeometry.computeVertexNormals();
+    craters.update(s, displayHeights);
     waterGeometry.attributes.position.needsUpdate = true;
     waterGeometry.attributes.depth.needsUpdate = true;
     waterGeometry.attributes.frozen.needsUpdate = true;
@@ -688,14 +698,14 @@ export function createWorldRenderer(canvas, reduced = false) {
           y !== 0 &&
           x !== SIZE - 1 &&
           y !== SIZE - 1) ||
-        (x === 0 || x === SIZE - 1 ? y : x) % 2 !== 0
+        (s.holes[i] ? x + y * 3 : x === 0 || x === SIZE - 1 ? y : x) % 4 !== 0
       )
         continue;
       const top = s.terrain[i] + s.water[i],
-        length = s.holes[i] ? 6 : top + 8;
+        length = s.holes[i] ? 2.8 : 3.8;
       dummy.position.set(
         x - HALF + (x === 0 ? 0 : x === SIZE - 1 ? 1 : 0.5),
-        top - length / 2,
+        top - length / 2 - ((worldTime * 2.4 + i * 0.37) % 1) * 3.2,
         y - HALF + (y === 0 ? 0 : y === SIZE - 1 ? 1 : 0.5),
       );
       dummy.scale.set(1, length, 1);
@@ -728,12 +738,15 @@ export function createWorldRenderer(canvas, reduced = false) {
       feedback.ghost(ghost);
     }
     if (!reduced && (event.type === "rain" || event.type === "sun")) {
-      waterMaterial.uniforms.ripples.value[rippleIndex++ % 4].set(
-        (event.x ?? 0) - HALF + 0.5,
-        (event.y ?? 0) - HALF + 0.5,
-        worldTime,
-        event.type === "rain" ? 1 : 0.6,
-      );
+      for (const [x, y] of event.type === "rain"
+        ? cells(event.piece)
+        : [[0, 0]])
+        waterMaterial.uniforms.ripples.value[rippleIndex++ % 4].set(
+          (event.x ?? 0) + x - HALF + 0.5,
+          (event.y ?? 0) + y - HALF + 0.5,
+          worldTime,
+          event.type === "rain" ? 1 : 0.6,
+        );
     }
     if (!reduced && (event.type === "bomb" || event.detonated || event.quake))
       shake = event.quake ? 0.65 : 0.22;
@@ -1002,6 +1015,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       });
       return {
         ...feedback.stats,
+        craterEdges: craters.edges,
         tokenPose: pose,
         calls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
@@ -1031,7 +1045,7 @@ export function createWorldRenderer(canvas, reduced = false) {
 }
 
 // The same continuous simulation remains playable on devices without WebGL.
-function createCanvasRenderer(canvas) {
+function createCanvasRenderer(canvas, reduced = false) {
   const ctx = canvas.getContext("2d");
   let width,
     height,
@@ -1104,7 +1118,7 @@ function createCanvasRenderer(canvas) {
           project(x + 1, y + 1, h),
           project(x, y + 1, h),
         ],
-        s.holes[i] ? "#1c3b46" : `hsl(137 20% ${56 + h * 2}%)`,
+        s.holes[i] ? "#a1e2ed" : `hsl(137 20% ${56 + h * 2}%)`,
       );
       if (w > 0.04)
         polygon(
@@ -1114,7 +1128,13 @@ function createCanvasRenderer(canvas) {
             project(x + 1, y + 1, h + w),
             project(x, y + 1, h + w),
           ],
-          s.ice[i] > 0 ? "#b5e6ed" : "#39aac1",
+          s.ice[i] > 0
+            ? "#b5e6ed"
+            : w < 0.7
+              ? "#50d9e7"
+              : w < 2
+                ? "#1788d9"
+                : "#243b91",
         );
     }
     if (o.showPiece && !s.over) {
@@ -1142,10 +1162,15 @@ function createCanvasRenderer(canvas) {
             ],
             `#${palette[s.current.type].toString(16)}`,
           );
+      } else if (s.current.type === "rain") {
+        for (const b of waterBubbles(s.current)) {
+          const p = project(aim.x + b.x + 0.5, aim.y + b.y + 0.5, z + 1);
+          drawWaterBubble(ctx, ...p, unit, b.fill, reduced ? 0 : t);
+        }
       } else {
         const p = project(aim.x + 0.5, aim.y + 0.5, z);
         ctx.beginPath();
-        ctx.arc(...p, unit * 0.9, 0, Math.PI * 2);
+        ctx.arc(...p, unit * 1.25, 0, Math.PI * 2);
         ctx.fillStyle = `#${palette[s.current.type].toString(16)}`;
         ctx.fill();
       }

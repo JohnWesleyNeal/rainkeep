@@ -81,7 +81,7 @@ export function createImpactFeedback(scene, camera, reduced = false) {
       const angle = (n * Math.PI * 2) / count,
         ageDelay = vapor ? (n % 4) * 0.055 : 0;
       const position = origin.clone();
-      if (type === "steam" && indices?.length) {
+      if ((type === "steam" || type === "splash") && indices?.length) {
         const i = indices[Math.floor((n / count) * indices.length)];
         position.x = (i % SIZE) - SIZE / 2 + 0.5;
         position.z = Math.floor(i / SIZE) - SIZE / 2 + 0.5;

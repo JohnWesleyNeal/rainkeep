@@ -1,0 +1,42 @@
+export function drawWaterBubble(ctx, x, y, r, fill, time = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = "rgba(176,238,255,.16)";
+  ctx.fillRect(-r, -r, r * 2, r * 2);
+  const level = -fill * r,
+    slope = Math.sin(time * 2.8 + fill * 8) * 0.11;
+  const water = ctx.createLinearGradient(0, level, 0, r);
+  water.addColorStop(0, "#38b7e1");
+  water.addColorStop(1, "#12549a");
+  ctx.fillStyle = water;
+  ctx.beginPath();
+  ctx.moveTo(-r, level - slope * r);
+  ctx.lineTo(r, level + slope * r);
+  ctx.lineTo(r, r);
+  ctx.lineTo(-r, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#83e5ff";
+  ctx.lineWidth = Math.max(1, r * 0.09);
+  ctx.beginPath();
+  ctx.moveTo(-r, level - slope * r);
+  ctx.lineTo(r, level + slope * r);
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "rgba(186,242,255,.85)";
+  ctx.lineWidth = Math.max(1, r * 0.08);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#e4fbff";
+  ctx.lineWidth = Math.max(1, r * 0.13);
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.78, Math.PI * 1.13, Math.PI * 1.38);
+  ctx.stroke();
+  ctx.restore();
+}

@@ -121,7 +121,7 @@ export function piece(s, turn) {
       "sun",
       "bomb",
     ][Math.floor(random(s) * 9)];
-  return {
+  const result = {
     type,
     shape:
       turn < opening.length
@@ -129,15 +129,79 @@ export function piece(s, turn) {
         : Math.floor(random(s) * SHAPES.length),
     rotation: 0,
   };
+  if (type === "rain") result.waterSize = result.shape % 3;
+  return result;
+}
+export const waterAmount = (p, level) =>
+  p.waterSize === undefined
+    ? 64 + level * 8
+    : (64 + level * 8) *
+      (2 / 3) *
+      waterBubbles(p).reduce((sum, b) => sum + b.share, 0);
+const bubbleLayouts = [
+  [[0, 0]],
+  [
+    [0, 0],
+    [2, 0],
+    [0, 2],
+  ],
+  [
+    [0, 0],
+    [2, 0],
+    [4, 0],
+  ],
+  [
+    [0, 0],
+    [2, 2],
+    [4, 0],
+  ],
+  [
+    [2, 0],
+    [0, 2],
+    [2, 2],
+    [4, 2],
+    [2, 4],
+  ],
+  [
+    [0, 0],
+    [2, 0],
+    [4, 0],
+    [2, 2],
+    [4, 2],
+  ],
+  [
+    [0, 0],
+    [2, 0],
+    [2, 2],
+    [4, 2],
+    [4, 4],
+  ],
+];
+export function waterBubbles(p) {
+  return cells(p).map(([x, y], n) => {
+    const fill =
+      p.waterSize === undefined ? 0.72 : [-0.26, 0.02, 0.3][(n + p.shape) % 3];
+    // The spherical water volume below the visible meniscus determines each share.
+    return { x, y, fill, share: (2 + 3 * fill - fill ** 3) / 4 };
+  });
 }
 export function cells(p) {
-  if (!["raise", "lower"].includes(p.type)) return [[0, 0]];
-  let points = SHAPES[p.shape].flatMap(([x, y]) => [
-    [x * 2, y * 2],
-    [x * 2 + 1, y * 2],
-    [x * 2, y * 2 + 1],
-    [x * 2 + 1, y * 2 + 1],
-  ]);
+  if (!["raise", "lower", "rain"].includes(p.type)) return [[0, 0]];
+  let points =
+    p.type === "rain"
+      ? bubbleLayouts[
+          p.waterSize === undefined || p.waterSize === 0
+            ? 0
+            : p.waterSize === 1
+              ? 1 + (p.shape % 3)
+              : 4 + (p.shape % 3)
+        ]
+      : SHAPES[p.shape].flatMap(([x, y]) => [
+          [x * 2, y * 2],
+          [x * 2 + 1, y * 2],
+          [x * 2, y * 2 + 1],
+          [x * 2 + 1, y * 2 + 1],
+        ]);
   for (let r = 0; r < p.rotation; r++) points = points.map(([x, y]) => [-y, x]);
   const minX = Math.min(...points.map((p) => p[0])),
     minY = Math.min(...points.map((p) => p[1]));
@@ -399,15 +463,25 @@ export function applyPiece(s, x, y) {
       if (puncture) s.holes[i] = true;
     }
   } else if (type === "rain") {
-    for (const { i, weight } of coverage) {
-      const patch = area(i % SIZE, Math.floor(i / SIZE), 2).filter(
-        (j) => s.terrain[j] <= s.terrain[i] + 0.01,
-      );
-      for (const j of patch) {
-        s.water[j] += ((64 + s.level * 8) * weight) / patch.length;
-        if (s.ice[i] > 0) s.ice[j] = Math.max(s.ice[j], s.ice[i]);
+    const bubbles = waterBubbles(s.current),
+      shares = bubbles.reduce((sum, b) => sum + b.share, 0);
+    for (const bubble of bubbles)
+      for (const { i, weight } of footprint(
+        { type: "bomb" },
+        x + bubble.x,
+        y + bubble.y,
+      )) {
+        const patch = area(i % SIZE, Math.floor(i / SIZE), 2).filter(
+          (j) => s.terrain[j] <= s.terrain[i] + 0.01,
+        );
+        for (const j of patch) {
+          s.water[j] +=
+            (((waterAmount(s.current, s.level) * bubble.share) / shares) *
+              weight) /
+            patch.length;
+          if (s.ice[i] > 0) s.ice[j] = Math.max(s.ice[j], s.ice[i]);
+        }
       }
-    }
   } else if (type === "sun") {
     const hit = bonus.groups.find((l) => l.cells.includes(center));
     if (hit?.frozen) {
@@ -618,7 +692,11 @@ export function restore(raw) {
       p.shape < SHAPES.length &&
       Number.isInteger(p.rotation) &&
       p.rotation >= 0 &&
-      p.rotation < 4;
+      p.rotation < 4 &&
+      (p.waterSize === undefined ||
+        (Number.isInteger(p.waterSize) &&
+          p.waterSize >= 0 &&
+          p.waterSize <= 2));
     if (
       !s ||
       ![1, 2, 3].includes(s.version) ||

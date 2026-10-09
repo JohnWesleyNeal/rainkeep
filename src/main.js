@@ -11,12 +11,14 @@ import {
   validPlacement,
   tick,
   waterTotal,
+  waterBubbles,
   restore,
   bonuses,
   landMass,
   QUAKE_LIMIT,
   smartBomb,
 } from "./simulation.js";
+import { drawWaterBubble } from "./bubble-canvas.js";
 import {
   clampAim,
   beginDrag,
@@ -129,6 +131,22 @@ function drawPiece() {
     maxX = Math.max(...pts.map(([x, y]) => x - y)),
     maxY = Math.max(...pts.map(([x, y]) => x + y));
   if (!["raise", "lower"].includes(state.current.type)) {
+    if (state.current.type === "rain") {
+      const scale = Math.min(
+        22,
+        110 / (maxX - minX + 2),
+        70 / (maxY * 0.5 + 2),
+      );
+      for (const b of waterBubbles(state.current))
+        drawWaterBubble(
+          preview,
+          75 + (b.x - b.y - (maxX + minX) / 2) * scale,
+          50 + (b.x + b.y - maxY / 2) * scale * 0.5,
+          scale * 0.9,
+          b.fill,
+        );
+      return;
+    }
     preview.fillStyle = TYPES[state.current.type].color;
     preview.beginPath();
     preview.arc(75, 50, 25, 0, 7);

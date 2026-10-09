@@ -9,24 +9,41 @@ export function createTokenWorkshop() {
   const iron = mat(0x36495c, 0.3, 0.5),
     brass = mat(0xe6ad62, 0.3, 0.7);
   const ember = new THREE.MeshBasicMaterial({ color: 0xffa43b });
-  const hot = new THREE.MeshBasicMaterial({ color: 0xfff2b3 });
-  const orange = new THREE.MeshBasicMaterial({
+  const hot = new THREE.MeshBasicMaterial({ color: 0xffeb78 });
+  const orange = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     vertexColors: true,
+    emissive: 0xff7b12,
+    emissiveIntensity: 0.45,
+    roughness: 0.8,
   });
-  const red = new THREE.MeshBasicMaterial({
+  const red = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     vertexColors: true,
+    emissive: 0xff5510,
+    emissiveIntensity: 0.32,
+    roughness: 0.8,
   });
   const rope = mat(0xdcc39b, 0.9);
   const crystalSeam = new THREE.TorusGeometry(0.58, 0.035, 4, 6);
-  const nucleusMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffbe41,
-    emissive: 0xff7e16,
-    emissiveIntensity: 0.8,
-    roughness: 0.6,
+  const nucleusMaterial = new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 } },
+    vertexShader: `varying vec3 n; varying vec3 eye; varying vec3 p;
+      void main(){p=position; n=normalize(normalMatrix*normal);
+        vec4 v=modelViewMatrix*vec4(position,1.);eye=-v.xyz;
+        gl_Position=projectionMatrix*v;}`,
+    fragmentShader: `uniform float time; varying vec3 n; varying vec3 eye; varying vec3 p;
+      void main(){float face=max(0.,dot(normalize(n),normalize(eye)));
+        float flow=sin(p.y*6.-time*4.+sin(p.x*5.+time*1.4)+sin(p.z*5.-time));
+        float heat=smoothstep(.08,.96,face)+flow*.065;
+        vec3 col=mix(vec3(1.,.12,.015),vec3(1.,.78,.07),clamp(heat,0.,1.));
+        col=mix(col,vec3(1.,.97,.58),smoothstep(.7,1.1,heat));
+        gl_FragColor=vec4(col*1.4,1.);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
   });
-  const nucleusGeometry = new THREE.SphereGeometry(0.74, 24, 18);
+  const nucleusGeometry = new THREE.SphereGeometry(1.05, 32, 24);
   const sphere = new THREE.SphereGeometry(1.08, 32, 24);
   const band = new THREE.TorusGeometry(1.078, 0.065, 8, 48);
   const cap = new THREE.CylinderGeometry(0.38, 0.42, 0.28, 20);
@@ -43,27 +60,74 @@ export function createTokenWorkshop() {
     false,
   );
   const spark = new THREE.SphereGeometry(0.105, 8, 6);
-  const drop = new THREE.LatheGeometry(
-    [
-      [0, -1.05],
-      [0.45, -0.96],
-      [0.76, -0.63],
-      [0.86, -0.2],
-      [0.76, 0.25],
-      [0.51, 0.7],
-      [0.23, 1.08],
-      [0, 1.55],
-    ].map(([x, y]) => new THREE.Vector2(x, y)),
-    32,
-  );
-  drop.computeVertexNormals();
+  const drop = new THREE.SphereGeometry(1, 32, 24);
   const glass = new THREE.MeshPhysicalMaterial({
-    color: 0x22bdd8,
-    roughness: 0.1,
-    metalness: 0.12,
+    color: 0xb5efff,
+    roughness: 0.06,
+    metalness: 0.05,
     clearcoat: 1,
     clearcoatRoughness: 0.08,
+    transparent: true,
+    opacity: 0.24,
+    depthWrite: false,
   });
+  const bubbleTime = { value: 0 };
+  glass.onBeforeCompile = (shader) => {
+    shader.uniforms.bubbleTime = bubbleTime;
+    shader.vertexShader = "uniform float bubbleTime;\n" + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+      transformed += normal * sin(position.y*4.+bubbleTime*3.+sin(position.x*3.))* .025;`,
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <color_fragment>",
+      `#include <color_fragment>
+      float shellRim=pow(1.-abs(dot(normalize(vNormal),normalize(vViewPosition))),2.);
+      diffuseColor.a=.12+shellRim*.76;
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.55,.9,1.),shellRim*.6);`,
+    );
+  };
+  const bubbleWhite = new THREE.MeshBasicMaterial({ color: 0xd9fbff });
+  const waterDisc = new THREE.CircleGeometry(1, 40);
+  const meniscus = new THREE.MeshPhysicalMaterial({
+    color: 0x188dca,
+    roughness: 0.3,
+    clearcoat: 1,
+    side: THREE.DoubleSide,
+  });
+  const liquidMaterials = new Map();
+  function liquidMaterial(fill) {
+    if (!liquidMaterials.has(fill)) {
+      const m = new THREE.MeshPhysicalMaterial({
+        color: 0x087fcb,
+        roughness: 0.2,
+        clearcoat: 1,
+      });
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.bubbleTime = bubbleTime;
+        shader.vertexShader = "varying vec3 inBubble;\n" + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+          "#include <begin_vertex>",
+          "#include <begin_vertex>\ninBubble=position;",
+        );
+        shader.fragmentShader =
+          "uniform float bubbleTime; varying vec3 inBubble;\n" +
+          shader.fragmentShader;
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+          float sx=sin(bubbleTime*2.8+${fill * 8})*.11;
+          float sz=cos(bubbleTime*2.1+${fill * 8})*.08;
+          if(inBubble.y>${fill}+sx*inBubble.x+sz*inBubble.z) discard;
+          diffuseColor.rgb*=.8+.2*smoothstep(-1.,${fill},inBubble.y);`,
+        );
+      };
+      m.customProgramCacheKey = () => `bubble-liquid-${fill}`;
+      liquidMaterials.set(fill, m);
+    }
+    return liquidMaterials.get(fill);
+  }
   const ice = new RoundedBoxGeometry(1.8, 1.8, 1.8, 3, 0.18);
   const iceMat = new THREE.MeshPhysicalMaterial({
     color: 0x9be8f5,
@@ -111,8 +175,7 @@ export function createTokenWorkshop() {
     return geometry;
   }
   const outerFlame = flame(1, 0.58),
-    innerFlame = flame(0.72, -0.28),
-    heartFlame = flame(0.48, 0.16);
+    innerFlame = flame(0.72, -0.28);
   const studGeos = [];
   for (let i = 0; i < 8; i++) {
     const geo = new THREE.SphereGeometry(0.09, 8, 6);
@@ -150,7 +213,7 @@ export function createTokenWorkshop() {
     group.add(mesh);
     return mesh;
   };
-  function make(type) {
+  function make(type, bubbles = [{ x: 0, y: 0, fill: 0.1 }]) {
     const g = new THREE.Group();
     g.userData.tokenType = type;
     if (type === "bomb" || type === "mine") {
@@ -184,20 +247,20 @@ export function createTokenWorkshop() {
       }
     } else if (type === "sun") {
       const halo = new THREE.Sprite(haloMat);
-      halo.scale.set(4.4, 4.4, 1);
-      halo.position.y = 0.5;
+      halo.scale.set(5.2, 5.2, 1);
       g.add(halo);
-      add(g, nucleusGeometry, nucleusMaterial, 0, -0.12, 0.15);
-      const shell = add(g, outerFlame, red);
+      add(g, nucleusGeometry, nucleusMaterial);
+      // A round hot body with three trailing tongues reads as a fireball.
+      const shell = add(g, outerFlame, red, 0.26, 0.55, -0.23);
+      shell.scale.set(0.65, 1.08, 0.65);
       shell.userData.flame = 0;
-      const inner = add(g, innerFlame, orange, 0, -0.02, 0.32);
+      const inner = add(g, innerFlame, orange, -0.53, 0.43, 0.05);
+      inner.scale.set(0.62, 0.58, 0.62);
       inner.userData.flame = 1;
-      const core = add(g, heartFlame, hot, 0, -0.08, 0.59);
-      core.userData.flame = 2;
       // A smaller curling tongue broadens the silhouette in the other views.
-      const side = add(g, innerFlame, orange, -0.55, -0.12, -0.25);
-      side.scale.set(0.65, 0.82, 0.65);
-      side.rotation.z = 0.38;
+      const side = add(g, innerFlame, orange, 0.08, 0.58, -0.5);
+      side.scale.set(0.5, 0.65, 0.5);
+      side.rotation.z = -0.38;
       side.userData.flame = 3;
       const embers = new THREE.InstancedMesh(spark, ember, 7);
       embers.userData.embers = true;
@@ -208,23 +271,45 @@ export function createTokenWorkshop() {
       const seam = add(g, crystalSeam, hot, 0, 0, 0.91);
       seam.rotation.z = 0.2;
     } else {
-      add(g, drop, glass);
-      const glint = add(g, spark, hot, -0.37, 0.25, 0.69);
-      glint.scale.set(0.65, 2.7, 0.4);
-      const pearls = new THREE.InstancedMesh(spark, glass, 4);
-      pearls.userData.pearls = true;
-      g.add(pearls);
+      for (const { x, y, fill } of bubbles) {
+        const bubble = new THREE.Group();
+        bubble.position.set(x, 0, y);
+        add(bubble, drop, glass);
+        const liquid = add(bubble, drop, liquidMaterial(fill));
+        liquid.scale.setScalar(0.96);
+        const surface = add(bubble, waterDisc, meniscus, 0, fill * 0.96, 0);
+        surface.scale.setScalar(Math.sqrt(1 - fill * fill) * 0.96);
+        surface.userData.waterSurface = fill;
+        const glint = add(bubble, drop, bubbleWhite, -0.35, 0.52, 0.67);
+        glint.scale.set(0.12, 0.28, 0.055);
+        const dot = add(bubble, spark, bubbleWhite, -0.1, 0.72, 0.64);
+        dot.scale.setScalar(0.7);
+        g.add(bubble);
+      }
+      const splashes = new THREE.InstancedMesh(
+        spark,
+        meniscus,
+        bubbles.length * 2,
+      );
+      splashes.userData.containedSplash = bubbles;
+      g.add(splashes);
     }
     const motion = new THREE.Group();
     motion.userData.tokenMotion = type;
     for (const child of [...g.children]) motion.add(child);
     g.add(motion);
-    g.scale.setScalar(type === "sun" ? 1.25 : type === "bomb" ? 1.18 : 1);
+    g.scale.setScalar(type === "sun" ? 1.6 : type === "bomb" ? 1.18 : 1);
+    g.traverse((o) => {
+      if (o.userData.flame !== undefined)
+        o.userData.restScale = o.scale.clone();
+    });
     animate(g, 0, true);
     return g;
   }
   const dummy = new THREE.Object3D();
   function animate(group, time, reduced = false, falling = 0) {
+    nucleusMaterial.uniforms.time.value = reduced ? 0 : time;
+    bubbleTime.value = reduced ? 0 : time;
     group.traverse((o) => {
       if (o.userData.tokenMotion) {
         const type = o.userData.tokenMotion,
@@ -235,10 +320,10 @@ export function createTokenWorkshop() {
         o.rotation.z = reduced
           ? 0
           : Math.sin(t * (type === "bomb" ? 3 : 2.4)) *
-            (type === "rain" ? 0.13 : 0.085);
+            (type === "rain" ? 0.025 : 0.085);
         o.rotation.y = reduced
           ? 0
-          : t * (type === "bomb" ? 0.32 : type === "sun" ? 0.16 : 0.08);
+          : t * (type === "bomb" ? 0.32 : type === "sun" ? 0.16 : 0);
         const stretch = reduced
           ? 1
           : type === "rain"
@@ -248,10 +333,38 @@ export function createTokenWorkshop() {
               : 1;
         o.scale.set(1 / Math.sqrt(stretch), stretch, 1 / Math.sqrt(stretch));
       }
+      if (o.userData.waterSurface !== undefined) {
+        const fill = o.userData.waterSurface,
+          t = reduced ? 0 : time;
+        const sx = Math.sin(t * 2.8 + fill * 8) * 0.11,
+          sz = Math.cos(t * 2.1 + fill * 8) * 0.08;
+        o.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(-sx, 1, -sz).normalize(),
+        );
+      }
+      if (o.userData.containedSplash) {
+        for (let n = 0; n < o.count; n++) {
+          const b = o.userData.containedSplash[Math.floor(n / 2)];
+          const phase = reduced ? 0 : (time * 1.7 + n * 1.4) % Math.PI;
+          const lift = reduced ? 0 : Math.sin(phase) * (0.18 + falling * 0.12);
+          dummy.position.set(
+            b.x + (n % 2 ? -0.25 : 0.25),
+            Math.min(0.9, b.fill * 0.96 + 0.06 + lift),
+            b.y + (n % 2 ? 0.2 : -0.2),
+          );
+          dummy.scale.setScalar(reduced ? 0 : 0.4 + lift);
+          dummy.updateMatrix();
+          o.setMatrixAt(n, dummy.matrix);
+        }
+        o.instanceMatrix.needsUpdate = true;
+      }
       if (o.userData.flame !== undefined) {
         const n = o.userData.flame;
         if (n < 3) {
-          o.scale.y = 1 + (reduced ? 0 : Math.sin(time * 7 + n * 1.9) * 0.045);
+          o.scale.y =
+            o.userData.restScale.y *
+            (1 + (reduced ? 0 : Math.sin(time * 7 + n * 1.9) * 0.045));
           o.rotation.y = reduced ? 0 : Math.sin(time * 2 + n) * 0.08;
         }
       }

@@ -1,5 +1,17 @@
 # Rainkeep validation
 
+## Edition 08
+
+Version 1.7.0, validated on 2026-10-09. Water uses one-, three-, and five-bubble formations with transparent shells, varied fill levels, internal sloshing and small contained splashes. Each bubble pours at its own location. Existing queued Water retains its original amount. The lake shader separates shallow, middle and deep water. Bomb holes have broken rims, illuminated shaft walls and an actual opening to the sky; arrows and the black pit tint are removed.
+
+45 Node tests pass, including cluster volumes at fractional placement across rotations, per-bubble landing locations, formation bounds, old/new saved Water restoration, and water amount derived from visible fill. The updated real-touch Classic route passes 38 checks, including building a lake, Water, Fire and save restoration. The production browser passes 29 checks, including offline reload, older saves, holes/repairs, hazards, touch and Canvas fallback. Ten additional phone-sized visual checks cover formations, unchanged labels, center/edge crater geometry, draw budget and layouts. Screenshots of three lake depths and craters at all four angles were inspected. These checks establish rendering and behavior in desktop Chromium; physical-phone performance and subjective art acceptance remain unproven.
+
+The build passes, with approximately 654 kB JavaScript / 174 kB gzip and the existing 74 kB sky image. No additional bitmap assets were generated. QA artifacts use the v8 prefix under ignored output/playwright.
+
+Eight additional checks against the built release verify saved bubble formations, rotation persistence, exact poured volume, queue handoff, reload persistence and omitted debug hooks. The existing feedback suite passes 23 checks and graphics resilience passes six, including actual WebGL loss/restoration and automatic Canvas fallback. A short silent recording shows the contained sloshing, formation rotation and landing splash.
+
+## Previous edition 07 evidence
+
 Version 1.6.0 / edition 07, validated on 2026-10-09 with Node.js 24 and desktop Chromium. This pass adds piece-specific motion, landing effects, and original procedural sound.
 
 - **Simulation and controls:** 40 passing Node tests. Adds centered rotation across every asymmetric shape, four-turn fractional continuity, boundary clamping, and held-grip rebasing. Includes fractional footprint area conservation across every shape/rotation, lower seams and earlier leakage after misalignment, fractional Water/Fire/Bomb/Downer handling, partial Downer coverage, continuous touch and sensor-noise filtering, rotated steering, version 2 migration and fractional save restoration. Existing conservation, Classic opening, contact/descent, hazards, scoring, and legacy migration tests remain passing.
