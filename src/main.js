@@ -12,6 +12,10 @@ import {
   tick,
   waterTotal,
   restore,
+  bonuses,
+  landMass,
+  QUAKE_LIMIT,
+  smartBomb,
 } from "./simulation.js";
 import { clampAim, beginDrag, moveDrag, rebaseDrag } from "./controls.js";
 
@@ -44,7 +48,7 @@ let saved = restore(read(SAVE)),
   started = false,
   paused = true,
   selectedMode = state.mode;
-let cursor = state.aim ? { ...state.aim } : { x: 4, y: 4 },
+let cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 },
   width = 0,
   height = 0,
   unit = 20,
@@ -66,6 +70,8 @@ try {
     if (Number.isFinite(b?.[mode]) && b[mode] >= 0) best[mode] = b[mode];
 } catch {}
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let worldBonus = bonuses(state),
+  lastNotice = "";
 function toast(text) {
   $("toast").textContent = text;
   $("toast").classList.add("visible");
@@ -183,13 +189,13 @@ function resize() {
   cancelSteering();
 }
 new ResizeObserver(resize).observe(board);
-function render() {
+function render(dt) {
   ctx.clearRect(0, 0, width, height);
   const drift = reduced ? 0 : Math.sin(animation * 0.15) * 8;
   cloud(width * 0.15 + drift, height * 0.24, 0.8, 0.42);
   cloud(width * 0.84 - drift, height * 0.21, 1, 0.48);
   cloud(width * 0.78 + drift, height * 0.76, 0.6, 0.32);
-  const center = project(8, 8, -1.7);
+  const center = project(SIZE / 2, SIZE / 2, -1.7);
   ctx.save();
   ctx.translate(center.x, center.y + unit * 2);
   ctx.scale(1, 0.3);
@@ -264,7 +270,18 @@ function render() {
         );
       const hue = 83 + ((x + y) % 5),
         light = 61 + ((x * 13 + y * 7) % 7) - h * 1.8;
-      polygon(p, `hsl(${hue} 26% ${light}%)`, "#eef2c71c");
+      polygon(
+        p,
+        state.holes[i] ? "#293b47" : `hsl(${hue} 26% ${light}%)`,
+        x % 2 === 0 && y % 2 === 0 ? "#eef2c72c" : null,
+      );
+      if (state.holes[i]) {
+        const hp = project(x + 0.5, y + 0.5, -0.2);
+        ctx.fillStyle = "#a5d3df99";
+        ctx.beginPath();
+        ctx.arc(hp.x, hp.y, unit * 0.14, 0, 7);
+        ctx.fill();
+      }
       if (h > 0.85) {
         ctx.strokeStyle = "#d4dfac66";
         ctx.lineWidth = 0.75;
@@ -303,7 +320,9 @@ function render() {
           );
         polygon(
           wp,
-          `hsla(${195 + Math.min(12, w * 5)} 65% ${65 - Math.min(w * 7, 16)} / .91)`,
+          state.ice[i] > 0
+            ? "#c3ecf5ed"
+            : `hsla(${195 + Math.min(12, w * 5)} 65% ${65 - Math.min(w * 7, 16)} / .91)`,
           "#beeefc35",
         );
         if ((x * 7 + y * 3) % 9 === 0) {
@@ -371,19 +390,123 @@ function render() {
     ctx.fill();
   }
   if (showGhost) drawFallingPiece();
+  drawWorldFeatures();
   particles = particles.filter((p) => p.life > 0);
   for (const p of particles) {
-    p.life -= 1 / 60;
+    p.life -= paused ? 0 : dt;
     const q = project(p.x, p.y, p.z);
     ctx.globalAlpha = Math.max(0, p.life / 1.1);
     ctx.fillStyle = p.color;
     ctx.beginPath();
     ctx.arc(q.x, q.y, 2.3, 0, 7);
     ctx.fill();
-    p.z += p.v / 60;
-    p.v -= 4 / 60;
+    if (!paused) {
+      p.z += p.v * dt;
+      p.v -= 4 * dt;
+    }
   }
   ctx.globalAlpha = 1;
+}
+function drawWorldFeatures() {
+  if (worldBonus.rainbow) {
+    const c = project(SIZE / 2, SIZE / 2, 5);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(1, 0.6);
+    for (const [n, color] of [
+      "#db7d72",
+      "#e7b774",
+      "#ced889",
+      "#83b9a3",
+      "#7faeca",
+    ].entries()) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, unit * (11 - n * 0.7), Math.PI, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  for (const lake of worldBonus.groups.filter((l) => l.duck && !l.frozen)) {
+    const i = lake.cells.reduce((a, b) =>
+        state.water[a] > state.water[b] ? a : b,
+      ),
+      p = project(
+        (i % SIZE) + 0.5,
+        Math.floor(i / SIZE) + 0.5,
+        state.terrain[i] + state.water[i],
+      );
+    const r = Math.max(3, unit * 0.65),
+      bob = reduced ? 0 : Math.sin(animation * 2 + i) * 1.3;
+    ctx.fillStyle = "#f4d56e";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + bob, r * 1.25, r * 0.75, 0, 0, 7);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(p.x + r * 0.7, p.y - r + bob, r * 0.7, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = "#d78347";
+    ctx.fillRect(p.x + r, p.y - r + bob, r, r * 0.3);
+    ctx.fillStyle = "#29454d";
+    ctx.beginPath();
+    ctx.arc(p.x + r * 0.85, p.y - r * 1.2 + bob, 0.75, 0, 7);
+    ctx.fill();
+  }
+  for (const m of state.mines) {
+    const p = project(
+      (m.i % SIZE) + 0.5,
+      Math.floor(m.i / SIZE) + 0.5,
+      state.terrain[m.i] + state.water[m.i] + 0.4,
+    );
+    ctx.fillStyle = "#5c6960";
+    ctx.font = `bold ${Math.max(13, unit * 2)}px Arial`;
+    ctx.textAlign = "center";
+    ctx.fillText("✹", p.x, p.y);
+  }
+  for (const h of state.hazards) {
+    const i = h.y * SIZE + h.x,
+      p = project(h.x + 0.5, h.y + 0.5, h.altitude),
+      ground = project(h.x + 0.5, h.y + 0.5, state.terrain[i] + state.water[i]);
+    ctx.strokeStyle = h.type === "ice" ? "#8bbfcf" : "#bd6c55";
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(ground.x, ground.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = h.type === "ice" ? "#d4f3fb" : "#687780";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(5, unit), 0, 7);
+    ctx.fill();
+    ctx.strokeStyle = "#42616c";
+    ctx.stroke();
+    ctx.fillStyle = "#42616c";
+    ctx.font = `bold ${Math.max(10, unit * 1.4)}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(h.type === "ice" ? "❄" : "✹", p.x, p.y);
+  }
+  if (
+    state.mode === "classic" &&
+    state.elapsed > 55 &&
+    state.turn >= 12 &&
+    !reduced
+  ) {
+    ctx.strokeStyle = "#6daeb655";
+    ctx.lineWidth = 1;
+    for (let n = 0; n < 12; n++) {
+      const p = project(
+        (n * 7.1) % SIZE,
+        (n * 11.3) % SIZE,
+        5 - ((animation * 3 + n) % 5),
+      );
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - 4);
+      ctx.lineTo(p.x, p.y + 3);
+      ctx.stroke();
+    }
+  }
 }
 function drawFallingPiece() {
   const shape = cells(state.current).sort((a, b) => a[0] + a[1] - b[0] - b[1]);
@@ -417,8 +540,8 @@ function drawFallingPiece() {
       ctx.lineTo(p.x, p.y - unit * 1.8);
       ctx.stroke();
     }
-    if (state.current.type === "rain" || state.current.type === "sun") {
-      const radius = unit * (state.current.type === "rain" ? 0.55 : 0.5);
+    if (!["raise", "lower"].includes(state.current.type)) {
+      const radius = unit * 1.1;
       const light = ctx.createRadialGradient(
         p.x - radius * 0.3,
         p.y - radius * 0.35,
@@ -429,12 +552,20 @@ function drawFallingPiece() {
       );
       light.addColorStop(
         0,
-        state.current.type === "rain" ? "#d2f7ff" : "#fff5ad",
+        state.current.type === "rain"
+          ? "#d2f7ff"
+          : state.current.type === "bomb"
+            ? "#bdc9d2"
+            : "#fff5ad",
       );
       light.addColorStop(0.5, TYPES[state.current.type].color);
       light.addColorStop(
         1,
-        state.current.type === "rain" ? "#2384ad" : "#df9348",
+        state.current.type === "rain"
+          ? "#2384ad"
+          : state.current.type === "bomb"
+            ? "#27384c"
+            : "#df9348",
       );
       ctx.fillStyle = light;
       ctx.beginPath();
@@ -443,22 +574,22 @@ function drawFallingPiece() {
       ctx.strokeStyle = state.current.type === "rain" ? "#e5fbffb0" : "#fff3ab";
       ctx.lineWidth = 1;
       ctx.stroke();
-      if (state.current.type === "sun") {
+      if (state.current.type !== "rain") {
         ctx.fillStyle = "#fffce7";
         ctx.font = `${Math.max(12, unit)}px Georgia`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("✦", p.x, p.y);
+        ctx.fillText(TYPES[state.current.type].icon, p.x, p.y);
       }
     } else {
       const points = top(x, y, z + 0.32);
       polygon(
         [points[3], points[2], project(x + 1, y + 1, z), project(x, y + 1, z)],
-        state.current.type === "raise" ? "#66864b" : "#a97550",
+        state.current.type === "raise" ? "#b36450" : "#66864b",
       );
       polygon(
         [points[1], points[2], project(x + 1, y + 1, z), project(x + 1, y, z)],
-        state.current.type === "raise" ? "#55793f" : "#956746",
+        state.current.type === "raise" ? "#965343" : "#55793f",
       );
       polygon(points, TYPES[state.current.type].color, "#fffce6c0");
       const arrow = project(x + 0.5, y + 0.5, z + 0.33);
@@ -466,7 +597,8 @@ function drawFallingPiece() {
       ctx.font = `bold ${Math.max(12, unit * 0.9)}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(TYPES[state.current.type].icon, arrow.x, arrow.y);
+      if (dx % 2 === 0 && dy % 2 === 0)
+        ctx.fillText(TYPES[state.current.type].icon, arrow.x, arrow.y);
     }
   }
 }
@@ -480,24 +612,37 @@ function drawPiece() {
     minX = Math.min(...pts.map(([x, y]) => x - y)),
     maxX = Math.max(...pts.map(([x, y]) => x - y)),
     maxY = Math.max(...pts.map(([x, y]) => x + y));
+  if (!["raise", "lower"].includes(state.current.type)) {
+    preview.fillStyle = TYPES[state.current.type].color;
+    preview.beginPath();
+    preview.arc(75, 50, 25, 0, 7);
+    preview.fill();
+    preview.fillStyle = "#fdf7df";
+    preview.font = "28px Georgia";
+    preview.textAlign = "center";
+    preview.textBaseline = "middle";
+    preview.fillText(TYPES[state.current.type].icon, 75, 50);
+    return;
+  }
+  const u = Math.min(14, 125 / (maxX - minX + 2), 80 / ((maxY + 2) * 0.5 + 1));
   for (const [x, y] of pts.sort((a, b) => a[0] + a[1] - b[0] - b[1])) {
-    const px = 75 + (x - y - (minX + maxX) / 2) * 18,
-      py = 45 + (x + y - maxY / 2) * 9;
+    const px = 75 + (x - y - (minX + maxX) / 2) * u,
+      py = 42 + (x + y - maxY / 2) * u * 0.5;
     preview.fillStyle = "#68885c";
     preview.beginPath();
-    preview.moveTo(px - 18, py);
-    preview.lineTo(px, py + 9);
-    preview.lineTo(px + 18, py);
-    preview.lineTo(px + 18, py + 9);
-    preview.lineTo(px, py + 18);
-    preview.lineTo(px - 18, py + 9);
+    preview.moveTo(px - u, py);
+    preview.lineTo(px, py + u * 0.5);
+    preview.lineTo(px + u, py);
+    preview.lineTo(px + u, py + u * 0.5);
+    preview.lineTo(px, py + u);
+    preview.lineTo(px - u, py + u * 0.5);
     preview.fill();
     preview.fillStyle = TYPES[state.current.type].color;
     preview.beginPath();
-    preview.moveTo(px, py - 9);
-    preview.lineTo(px + 18, py);
-    preview.lineTo(px, py + 9);
-    preview.lineTo(px - 18, py);
+    preview.moveTo(px, py - u * 0.5);
+    preview.lineTo(px + u, py);
+    preview.lineTo(px, py + u * 0.5);
+    preview.lineTo(px - u, py);
     preview.closePath();
     preview.fill();
     preview.strokeStyle = "#f5f9d688";
@@ -505,6 +650,51 @@ function drawPiece() {
   }
 }
 function ui() {
+  record();
+  worldBonus = bonuses(state);
+  $("level").textContent = state.level;
+  $("lakes").textContent = worldBonus.lakes;
+  $("ducks").textContent = worldBonus.ducks;
+  $("multiplier").textContent = "×" + worldBonus.multiplier;
+  const pressure = Math.min(
+    100,
+    Math.round((landMass(state) / QUAKE_LIMIT) * 100),
+  );
+  $("quake-text").textContent = pressure + "%";
+  $("quake-bar").style.width = pressure + "%";
+  $("quake-bar").style.background = pressure > 75 ? "#c6664f" : "#9bab7a";
+  document
+    .querySelector(".quake-meter")
+    .setAttribute("aria-valuenow", pressure);
+  $("smart-bomb").textContent = "Smart bomb · " + state.smartBombs;
+  $("smart-bomb").disabled = paused || state.over || state.smartBombs < 1;
+  $("smart-bomb").hidden = state.smartBombs < 1;
+  if (
+    state.notice &&
+    state.noticeUntil > state.elapsed &&
+    state.notice !== lastNotice
+  ) {
+    toast(state.notice);
+    lastNotice = state.notice;
+  }
+  const radar = $("leak-map").getContext("2d");
+  radar.fillStyle = "#dbe1d1";
+  radar.fillRect(0, 0, 64, 64);
+  for (let i = 0; i < state.terrain.length; i++) {
+    radar.fillStyle =
+      state.leaks[i] > 0.0001
+        ? "#c25042"
+        : state.holes[i]
+          ? "#293b47"
+          : state.ice[i] > 0
+            ? "#eaf9fb"
+            : state.water[i] > 0.12
+              ? "#69a9bf"
+              : state.terrain[i] > 0.2
+                ? "#83976a"
+                : "#dbe1d1";
+    radar.fillRect((i % SIZE) * 2, Math.floor(i / SIZE) * 2, 2, 2);
+  }
   $("score").textContent = String(Math.floor(state.score)).padStart(5, "0");
   $("best").textContent = String(best[state.mode]).padStart(5, "0");
   const percent = Math.min(100, Math.floor((state.spill / LIMIT) * 100));
@@ -516,7 +706,7 @@ function ui() {
     .setAttribute("aria-valuenow", String(percent));
   $("spill-hint").textContent =
     percent > 70
-      ? "Find a lake. Let the sun help."
+      ? "Fire evaporates a lake and lowers the drain."
       : "Every drop over the edge counts.";
   $("water").textContent = waterTotal(state).toFixed(1);
   $("piece-name").textContent = TYPES[state.current.type].name;
@@ -538,9 +728,15 @@ function ui() {
   $("turn-label").textContent =
     "DROP " + String(state.turn + 1).padStart(2, "0");
   $("weather-label").textContent =
-    state.turn > 20
-      ? "A LITTLE BALANCE GOES A LONG WAY"
-      : "A GOOD DAY FOR A LITTLE RAIN";
+    state.turn < 12 && state.mode === "classic"
+      ? "BUILD AN ENCLOSURE BEFORE WATER ARRIVES"
+      : worldBonus.rainbow
+        ? "RAINBOW · SCORES ×10"
+        : "LEVEL " +
+          state.level +
+          " · " +
+          Math.ceil(120 - (state.elapsed % 120)) +
+          "s TO NEXT";
   $("rotate").disabled = paused || state.over || state.dropping;
   $("drop").disabled = paused || state.over || state.dropping;
   document
@@ -586,13 +782,17 @@ function land(event) {
   if (event.type === "sun")
     toast(
       event.removed > 0.1
-        ? `A little sunshine. +${Math.round(event.removed * 150)} points`
-        : "Aim the sun at water to score.",
+        ? `Lake evaporated. +${event.earned} · ×${event.multiplier}`
+        : state.noticeUntil > state.elapsed
+          ? state.notice
+          : "Aim Fire at a lake to score and lower the drain.",
     );
-  else if (state.turn === 1) toast("Build banks around the water.");
-  else if (state.turn === 3) toast("Rain next. Aim inside your lake.");
+  else if (event.quake) toast(state.notice);
+  else if (event.repaired) toast(`Hole repaired. +${event.earned}`);
+  else if (state.turn === 1) toast("Overlap Upper pieces to enclose dry land.");
+  else if (state.turn === 12) toast("Water next. Aim inside your enclosure.");
   else if (event.type === "lower")
-    toast("Bank lowered. Watch where the water goes.");
+    toast("Footprint leveled to its lowest point. Watch your banks.");
   clampCursor();
   rebaseDrag(drag, cursor);
   record();
@@ -611,7 +811,7 @@ function rotate() {
 function locate(e) {
   const r = board.getBoundingClientRect();
   const sx = (e.clientX - r.left - origin.x) / unit;
-  const sy = (e.clientY - r.top - origin.y + 0.15 * unit * 0.85) / (unit * 0.5);
+  const sy = (e.clientY - r.top - origin.y) / (unit * 0.5);
   cursor = clampAim(
     { x: Math.floor((sx + sy) / 2), y: Math.floor((sy - sx) / 2) },
     state.current,
@@ -706,10 +906,11 @@ window.addEventListener("keydown", (e) => {
   )
     e.preventDefault();
   if (state.dropping) return;
-  if (e.code === "ArrowLeft") nudge(-1, 0);
-  if (e.code === "ArrowRight") nudge(1, 0);
-  if (e.code === "ArrowUp") nudge(0, -1);
-  if (e.code === "ArrowDown") nudge(0, 1);
+  const step = e.shiftKey ? 2 : 1;
+  if (e.code === "ArrowLeft") nudge(-step, 0);
+  if (e.code === "ArrowRight") nudge(step, 0);
+  if (e.code === "ArrowUp") nudge(0, -step);
+  if (e.code === "ArrowDown") nudge(0, step);
   if (e.code === "KeyR") rotate();
   if (e.code === "Space") drop();
   clampCursor();
@@ -730,6 +931,13 @@ for (const [id, action] of [
   });
 }
 $("pause").onclick = () => showDialog("pause");
+$("smart-bomb").onclick = () => {
+  if (!paused && smartBomb(state)) {
+    tone("bomb");
+    save();
+    ui();
+  }
+};
 $("help").onclick = () => showDialog("help");
 $("sound").onclick = () => {
   soundOn = !soundOn;
@@ -739,7 +947,7 @@ $("sound").onclick = () => {
 };
 if (matchMedia("(pointer: coarse)").matches)
   $("input-tip").textContent =
-    "Slide anywhere to steer · Lift & re-touch · Arrows fine-tune";
+    "Slide to steer · Re-touch keeps aim · Arrows: half-tile steps";
 let focusBeforeModal;
 function showDialog(kind) {
   if ($("overlay").hidden) focusBeforeModal = document.activeElement;
@@ -763,7 +971,7 @@ function showDialog(kind) {
   if (kind === "start" || kind === "new") {
     title.innerHTML = "Keep a little<br><em>rain.</em>";
     copy.innerHTML =
-      "Shape the land. Catch the water.<br>See how long your little lakes can last.";
+      "Classic starts flat and dry. Build enclosures with Uppers before water arrives.<br>Keep the drain low. Fire clears lakes; too much land risks earthquakes.";
     start.textContent =
       kind === "start" && saved && !saved.over
         ? "Continue your landscape ↗"
@@ -790,10 +998,10 @@ function showDialog(kind) {
     title.innerHTML = "Go with<br>the <em>flow.</em>";
     copy.className = "instructions";
     copy.innerHTML =
-      "<b>↑ Raise</b> banks to hold the water.<br><b>↓ Lower</b> land to carve or connect lakes.<br><b>● Rain</b> fills the spot where it lands.<br><b>✦ Sun</b> dries nearby water for points.<br><br><b>Classic:</b> steer and rotate as pieces fall. Drop makes them fall faster.<br><b>Daydream:</b> pieces wait until you press Drop.<br>Overflow ends the run.";
+      "<b>↑ Upper</b> raises land and repairs holes. Overlap in half-tile steps to shape thin banks.<br><b>↓ Downer</b> levels its whole footprint to the lowest point; touching a hole expands it.<br><b>● Water</b> flows to low ground. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a connected lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Separate lakes, deep-water ducks, and a large-volume rainbow multiply scores. Too much land triggers earthquakes.<br>Level 2 adds temporary ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Classic:</b> flat, dry start with falling pieces.<br><b>Daydream:</b> a starter lake and pieces that wait for Drop.";
     start.textContent = started ? "Back to your landscape ↗" : "Got it ↗";
     $("modal-foot").textContent =
-      "Slide to steer. Lift and re-touch without moving the piece. Arrow buttons fine-tune. Keyboard: arrows / R / Space.";
+      "Slide to steer; re-touch keeps your aim. Arrows: fine steps. Keyboard: arrows / Shift for larger steps / R / Space.";
   } else if (kind === "over") {
     record();
     title.innerHTML = "After<br>the <em>rain.</em>";
@@ -824,13 +1032,18 @@ function resume() {
 }
 function newGame() {
   state = createGame(selectedMode);
-  cursor = { x: 4, y: 4 };
+  cursor = { x: 8, y: 8 };
   particles = [];
   saved = null;
   lastPiece = "";
   resume();
   save();
-  toast("A little lake to get you started.");
+  lastNotice = "";
+  toast(
+    state.mode === "classic"
+      ? "Flat and dry. Build your own lakes before water arrives."
+      : "Practice lake ready. Pieces wait for Drop.",
+  );
 }
 $("start").onclick = () => {
   if (dialogKind === "pause") resume();
@@ -918,7 +1131,7 @@ function frame(now) {
       lastSave = now;
     }
   }
-  render();
+  render(dt);
   if (now - uiTime > 100) {
     ui();
     uiTime = now;

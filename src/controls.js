@@ -23,7 +23,7 @@ export function beginDrag(point, aim, unit) {
     x: aim.x,
     y: aim.y,
     aim: { ...aim },
-    unit: Math.max(18, unit),
+    unit: Math.max(11, unit),
   };
 }
 export function rebaseDrag(drag, aim) {

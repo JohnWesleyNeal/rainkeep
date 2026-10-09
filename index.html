@@ -21,11 +21,12 @@
       <header class="masthead">
         <a class="brand" href="./" aria-label="Rainkeep home"
           ><span class="brand-mark">≋</span> rainkeep<span class="brand-dot"
-            >02</span
+            >03</span
           ></a
         >
         <span class="edition"
-          >A LITTLE LANDSCAPE PUZZLE <span>VOL. 02 / STEER THE RAIN</span></span
+          >A LITTLE LANDSCAPE PUZZLE
+          <span>VOL. 03 / BUILD BEFORE THE RAIN</span></span
         >
         <div class="utilities">
           <button
@@ -73,12 +74,12 @@
           </div>
           <div class="spill-section">
             <div class="meter-heading">
-              <span>OVERFLOW</span><span id="spill-text">0%</span>
+              <span>DRAIN</span><span id="spill-text">0%</span>
             </div>
             <div
               class="meter"
               role="progressbar"
-              aria-label="Overflow"
+              aria-label="Drain"
               aria-valuemin="0"
               aria-valuemax="100"
               aria-valuenow="0"
@@ -86,6 +87,12 @@
               <div id="spill-bar"></div>
             </div>
             <p id="spill-hint">Every drop over the edge counts.</p>
+            <canvas
+              id="leak-map"
+              width="64"
+              height="64"
+              aria-label="Leak map. Red marks show water escaping."
+            ></canvas>
           </div>
           <div class="piece-section">
             <div class="piece-heading">
@@ -121,7 +128,7 @@
             <div
               class="nudge-pad"
               role="group"
-              aria-label="Steer piece one tile"
+              aria-label="Steer piece in fine steps"
             >
               <button data-nudge="-1,0" aria-label="Move up left">↖</button>
               <button data-nudge="0,-1" aria-label="Move up right">↗</button>
@@ -137,6 +144,30 @@
           <p class="input-tip" id="input-tip">
             Point to steer · R to rotate · Space to drop faster
           </p>
+          <div class="mechanics-panel">
+            <div class="world-stats">
+              <span>LEVEL <b id="level">1</b></span
+              ><span>LAKES <b id="lakes">0</b></span
+              ><span>DUCKS <b id="ducks">0</b></span
+              ><span>SCORE <b id="multiplier">×1</b></span>
+            </div>
+            <div class="quake-heading">
+              <span>LAND / EARTHQUAKE</span><span id="quake-text">0%</span>
+            </div>
+            <div
+              class="quake-meter"
+              role="progressbar"
+              aria-label="Earthquake pressure"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <div id="quake-bar"></div>
+            </div>
+            <button id="smart-bomb" class="text-btn" disabled>
+              Smart bomb · 0
+            </button>
+          </div>
           <div class="lake-stat">
             <span class="water-icon">◡</span>
             <div><strong id="water">15.5</strong><span>WATER HELD</span></div>
@@ -173,9 +204,9 @@
         </div>
         <div id="mode-picker" class="mode-picker">
           <button data-mode="daydream" class="selected" aria-pressed="true">
-            Daydream<small>No drop timer</small></button
+            Daydream<small>Practice with a starter lake</small></button
           ><button data-mode="classic" aria-pressed="false">
-            Classic<small>Steer falling pieces</small>
+            Classic<small>Flat start · falling pieces</small>
           </button>
         </div>
         <button id="start" class="primary">Let it rain <span>↗</span></button>
