@@ -1,5 +1,22 @@
 export const SIZE = 16;
 export const LIMIT = 80;
+export const SPAWN_ALTITUDE = 7;
+export function fallDuration(s) {
+  return Math.max(2.8, 8 - s.turn * 0.055);
+}
+export function landingHeight(s, aim) {
+  return Math.max(
+    ...cells(s.current).map(([dx, dy]) => {
+      const i = (aim.y + dy) * SIZE + aim.x + dx;
+      return s.terrain[i] + s.water[i];
+    }),
+  );
+}
+export function accelerateDrop(s) {
+  if (s.over || s.dropping) return false;
+  s.dropping = true;
+  return true;
+}
 export const SHAPES = [
   [
     [0, 0],
@@ -71,7 +88,9 @@ export function createGame(mode = "daydream", seed = Date.now() >>> 0) {
     score: 0,
     turn: 0,
     elapsed: 0,
-    remaining: 12,
+    remaining: 8,
+    altitude: SPAWN_ALTITUDE,
+    dropping: false,
     over: false,
   };
   for (let y = 0; y < SIZE; y++)
@@ -131,7 +150,9 @@ export function applyPiece(s, x, y) {
   s.turn++;
   s.current = s.next;
   s.next = piece(s, s.turn + 1);
-  s.remaining = Math.max(5, 12 - s.turn * 0.08);
+  s.remaining = fallDuration(s);
+  s.altitude = SPAWN_ALTITUDE;
+  s.dropping = false;
   return { type, targets, removed };
 }
 // Conservative flux: each cell's outgoing flow is scaled to its available water.
@@ -179,15 +200,25 @@ export function flow(s, dt = 1 / 30, leak = true) {
   if (s.spill >= LIMIT) s.over = true;
   return lost;
 }
-export function tick(s, dt) {
+export function tick(s, dt, aim = s.aim || { x: 4, y: 4 }) {
   if (s.over) return;
   flow(s, dt);
   s.elapsed += dt;
-  if (s.mode === "classic") s.remaining = Math.max(0, s.remaining - dt);
+  if (s.over || !validPlacement(s.current, aim.x, aim.y)) return;
+  if (s.mode === "classic" || s.dropping) {
+    const contact = landingHeight(s, aim);
+    const speed = s.dropping ? 32 : SPAWN_ALTITUDE / fallDuration(s);
+    s.altitude = Math.max(contact, s.altitude - speed * dt);
+    s.remaining = Math.max(
+      0,
+      (s.altitude - contact) / (SPAWN_ALTITUDE / fallDuration(s)),
+    );
+    if (s.altitude <= contact + 1e-8) return applyPiece(s, aim.x, aim.y);
+  }
 }
 export function restore(raw) {
   try {
-    const s = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const s = typeof raw === "string" ? JSON.parse(raw) : structuredClone(raw);
     const finite = (n, min, max) => Number.isFinite(n) && n >= min && n <= max;
     const okPiece = (p) =>
       p &&
@@ -232,6 +263,18 @@ export function restore(raw) {
       (!Number.isInteger(s.aim.x) ||
         !Number.isInteger(s.aim.y) ||
         !validPlacement(s.current, s.aim.x, s.aim.y))
+    )
+      return null;
+    // Upgrade old runs in place, preserving their board, queue, score, and aim.
+    if (s.altitude === undefined) {
+      s.altitude =
+        SPAWN_ALTITUDE *
+        Math.min(1, s.remaining / Math.max(5, 12 - s.turn * 0.08));
+      s.dropping = false;
+    }
+    if (
+      !finite(s.altitude, 0, SPAWN_ALTITUDE) ||
+      typeof s.dropping !== "boolean"
     )
       return null;
     return structuredClone(s);

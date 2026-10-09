@@ -921,3 +921,199 @@ footer button {
     scroll-behavior: auto !important;
   }
 }
+.nudge-pad {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  flex: 0 0 76px;
+  touch-action: none;
+}
+.nudge-pad button {
+  min-height: 34px;
+  border: 1px solid #bfc9bb;
+  background: #e4e8da;
+  border-radius: 4px;
+  font-size: 21px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.nudge-pad button:active {
+  background: #c8d9bc;
+}
+.controls {
+  align-items: stretch;
+  touch-action: none;
+}
+.rotate-btn,
+.drop-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.controls > .rotate-btn,
+.controls > .drop-btn {
+  height: 72px;
+}
+.descent-meter {
+  height: 3px;
+  border-radius: 3px;
+  background: #d6dccd;
+  margin-top: 10px;
+  overflow: hidden;
+}
+#descent-bar {
+  height: 100%;
+  background: #659986;
+  width: 0;
+}
+@media (max-width: 650px) {
+  .console {
+    grid-template-columns: 1fr 1fr;
+    gap: 13px 18px;
+  }
+  .piece-section {
+    grid-column: 1/-1;
+    grid-row: 2;
+  }
+  .piece-card {
+    height: 64px;
+    margin-top: 8px;
+  }
+  .piece-card canvas {
+    width: 90px;
+    height: 60px;
+  }
+  .piece-card h2 {
+    font-size: 22px;
+  }
+  .piece-card p {
+    font-size: 10px;
+  }
+  .piece-heading .eyebrow {
+    font-size: 8px;
+  }
+  #timer {
+    font-size: 8px;
+  }
+  .next-row {
+    font-size: 8px;
+    margin-top: 8px;
+  }
+  .controls {
+    grid-column: 1/-1;
+    grid-row: 3;
+    flex-direction: row;
+    gap: 9px;
+  }
+  .controls > .rotate-btn {
+    flex: 1;
+  }
+  .controls > .drop-btn {
+    flex: 1.2;
+  }
+  .controls > .rotate-btn,
+  .controls > .drop-btn {
+    height: 88px;
+    font-size: 13px;
+  }
+  .nudge-pad {
+    flex-basis: 104px;
+  }
+  .nudge-pad button {
+    min-height: 42px;
+    font-size: 25px;
+  }
+  .input-tip {
+    grid-column: 1/-1;
+    grid-row: 4;
+    font-size: 9px;
+    margin: 0 0 3px;
+  }
+  .landscape > canvas {
+    height: 300px;
+  }
+  .rotate-btn > span {
+    display: block;
+    margin: 0 0 4px;
+  }
+  .descent-meter {
+    margin-top: 8px;
+  }
+}
+@media (max-height: 550px) and (min-width: 651px) {
+  .controls {
+    gap: 6px;
+  }
+  .controls > .rotate-btn,
+  .controls > .drop-btn {
+    height: 64px;
+    font-size: 10px;
+  }
+  .nudge-pad {
+    flex-basis: 65px;
+  }
+  .nudge-pad button {
+    min-height: 30px;
+    font-size: 18px;
+  }
+  .rotate-btn > span {
+    font-size: 18px;
+    margin-right: 3px;
+  }
+  .rotate-btn kbd {
+    display: none;
+  }
+  .input-tip {
+    display: none;
+  }
+  .descent-meter {
+    margin-top: 5px;
+  }
+  .spill-section {
+    padding: 8px 0;
+  }
+  .piece-section {
+    padding: 9px 0;
+  }
+}
+@media (max-width: 650px) and (max-height: 720px) {
+  .landscape > canvas {
+    height: 180px;
+  }
+  .console {
+    gap: 8px 14px;
+    padding-top: 10px;
+  }
+  .piece-card {
+    height: 52px;
+  }
+  .piece-card canvas {
+    height: 48px;
+    width: 74px;
+  }
+  .piece-card h2 {
+    font-size: 20px;
+  }
+  .controls > .rotate-btn,
+  .controls > .drop-btn {
+    height: 76px;
+    font-size: 12px;
+  }
+  .nudge-pad {
+    flex-basis: 96px;
+  }
+  .nudge-pad button {
+    min-height: 36px;
+    font-size: 22px;
+  }
+  .input-tip {
+    font-size: 7px;
+  }
+  #score {
+    font-size: 28px;
+  }
+  footer {
+    display: none;
+  }
+}

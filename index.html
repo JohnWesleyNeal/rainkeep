@@ -21,11 +21,11 @@
       <header class="masthead">
         <a class="brand" href="./" aria-label="Rainkeep home"
           ><span class="brand-mark">≋</span> rainkeep<span class="brand-dot"
-            >01</span
+            >02</span
           ></a
         >
         <span class="edition"
-          >A LITTLE LANDSCAPE PUZZLE <span>VOL. 01 / CATCH THE RAIN</span></span
+          >A LITTLE LANDSCAPE PUZZLE <span>VOL. 02 / STEER THE RAIN</span></span
         >
         <div class="utilities">
           <button
@@ -108,16 +108,34 @@
             <div class="next-row">
               <span>NEXT UP</span><span id="next">↑ Raise</span>
             </div>
+            <div
+              id="descent-meter"
+              class="descent-meter"
+              aria-hidden="true"
+              hidden
+            >
+              <div id="descent-bar"></div>
+            </div>
           </div>
           <div class="controls">
+            <div
+              class="nudge-pad"
+              role="group"
+              aria-label="Steer piece one tile"
+            >
+              <button data-nudge="-1,0" aria-label="Move up left">↖</button>
+              <button data-nudge="0,-1" aria-label="Move up right">↗</button>
+              <button data-nudge="0,1" aria-label="Move down left">↙</button>
+              <button data-nudge="1,0" aria-label="Move down right">↘</button>
+            </div>
             <button id="rotate" class="rotate-btn" title="Rotate (R)">
               <span>↻</span> Rotate <kbd>R</kbd></button
             ><button id="drop" class="drop-btn">
-              Drop piece <span>↘</span>
+              Drop faster <span>↘</span>
             </button>
           </div>
           <p class="input-tip" id="input-tip">
-            Point to place · R to rotate · Space to drop
+            Point to steer · R to rotate · Space to drop faster
           </p>
           <div class="lake-stat">
             <span class="water-icon">◡</span>
@@ -157,7 +175,7 @@
           <button data-mode="daydream" class="selected" aria-pressed="true">
             Daydream<small>No drop timer</small></button
           ><button data-mode="classic" aria-pressed="false">
-            Classic<small>Think on your feet</small>
+            Classic<small>Steer falling pieces</small>
           </button>
         </div>
         <button id="start" class="primary">Let it rain <span>↗</span></button>

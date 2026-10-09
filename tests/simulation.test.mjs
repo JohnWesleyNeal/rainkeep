@@ -10,6 +10,9 @@ import {
   waterTotal,
   restore,
   tick,
+  SPAWN_ALTITUDE,
+  accelerateDrop,
+  landingHeight,
 } from "../src/simulation.js";
 test("water stays in the starter lake at equilibrium", () => {
   const s = createGame();
@@ -86,19 +89,23 @@ test("corrupt and hostile saves are rejected", () => {
     (s) => (s.remaining = 99),
     (s) => (s.mode = "unknown"),
     (s) => (s.over = "no"),
+    (s) => (s.altitude = -1),
+    (s) => (s.dropping = "yes"),
   ]) {
     const s = createGame();
     mutation(s);
     assert.equal(restore(s), null);
   }
 });
-test("classic clock advances while daydream stays untimed; overflow ends run", () => {
+test("classic pieces descend while daydream suspends them; overflow ends run", () => {
   const a = createGame("classic"),
     b = createGame();
   tick(a, 1);
   tick(b, 1);
-  assert.equal(a.remaining, 11);
-  assert.equal(b.remaining, 12);
+  assert.ok(a.altitude < SPAWN_ALTITUDE);
+  assert.equal(b.altitude, SPAWN_ALTITUDE);
+  assert.equal(a.turn, 0);
+  assert.equal(b.turn, 0);
   a.spill = LIMIT;
   a.water[0] = 3;
   tick(a, 1 / 30);
@@ -106,6 +113,67 @@ test("classic clock advances while daydream stays untimed; overflow ends run", (
   const before = JSON.stringify(a);
   tick(a, 1);
   assert.equal(JSON.stringify(a), before);
+});
+test("fast drop accelerates a visible fall and changes terrain only on contact", () => {
+  const s = createGame("daydream", 42),
+    aim = { x: 6, y: 6 },
+    before = [...s.terrain];
+  assert.equal(accelerateDrop(s), true);
+  assert.equal(accelerateDrop(s), false);
+  assert.deepEqual(s.terrain, before);
+  assert.equal(tick(s, 1 / 30, aim), undefined);
+  assert.ok(s.altitude < SPAWN_ALTITUDE);
+  assert.deepEqual(s.terrain, before);
+  let event;
+  for (let n = 0; n < 30 && !event; n++) event = tick(s, 1 / 30, aim);
+  assert.equal(event.type, "raise");
+  assert.equal(s.turn, 1);
+  assert.notDeepEqual(s.terrain, before);
+  assert.equal(s.altitude, SPAWN_ALTITUDE);
+  assert.equal(s.dropping, false);
+});
+test("classic lands naturally at the current footprint without a Drop command", () => {
+  const s = createGame("classic", 42),
+    aim = { x: 4, y: 4 };
+  const before = [...s.terrain];
+  let event;
+  for (let n = 0; n < 300 && !event; n++) event = tick(s, 1 / 30, aim);
+  assert.equal(event.type, "raise");
+  assert.notDeepEqual(s.terrain, before);
+  assert.ok(s.elapsed < 8);
+  assert.equal(s.turn, 1);
+});
+test("moving a descending piece onto a higher bank makes contact earlier", () => {
+  const s = createGame("classic", 42);
+  s.altitude = 0.9;
+  assert.ok(landingHeight(s, { x: 4, y: 4 }) > 0.9);
+  assert.equal(tick(s, 1 / 30, { x: 4, y: 4 }).type, "raise");
+});
+test("mid-fall saves resume at the same altitude, including a committed fast drop", () => {
+  const a = createGame("classic", 42);
+  a.aim = { x: 6, y: 6 };
+  for (let i = 0; i < 30; i++) tick(a, 1 / 30, a.aim);
+  accelerateDrop(a);
+  const b = restore(JSON.stringify(a));
+  assert.equal(b.altitude, a.altitude);
+  assert.equal(b.dropping, true);
+  for (let i = 0; i < 12; i++) {
+    tick(a, 1 / 30, a.aim);
+    tick(b, 1 / 30, b.aim);
+  }
+  assert.deepEqual(a, b);
+});
+test("previous-version runs gain descent state without losing their board or queue", () => {
+  const old = createGame("classic", 42);
+  delete old.altitude;
+  delete old.dropping;
+  old.remaining = 6;
+  old.score = 321;
+  const s = restore(JSON.stringify(old));
+  assert.equal(s.altitude, SPAWN_ALTITUDE / 2);
+  assert.equal(s.score, 321);
+  assert.deepEqual(s.current, old.current);
+  assert.deepEqual(s.terrain, old.terrain);
 });
 test("terrain edits are bounded after repeated drops", () => {
   const s = createGame();

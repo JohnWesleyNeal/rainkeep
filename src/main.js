@@ -5,12 +5,15 @@ import {
   TYPES,
   cells,
   createGame,
-  applyPiece,
+  SPAWN_ALTITUDE,
+  accelerateDrop,
+  landingHeight,
   validPlacement,
   tick,
   waterTotal,
   restore,
 } from "./simulation.js";
+import { clampAim, beginDrag, moveDrag, rebaseDrag } from "./controls.js";
 
 const $ = (id) => document.getElementById(id),
   board = $("board"),
@@ -168,8 +171,16 @@ function resize() {
   board.width = Math.round(width * dpr);
   board.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  unit = Math.min(width / (SIZE * 2 + 3), height / (SIZE + 7));
-  origin = { x: width / 2, y: (height - SIZE * unit) / 2 - 5 };
+  unit = Math.min(
+    width / (SIZE * 2 + 3),
+    height / (SIZE + SPAWN_ALTITUDE * 0.85 + 3),
+  );
+  const worldHeight = SIZE + (SPAWN_ALTITUDE + 1.4) * 0.85;
+  origin = {
+    x: width / 2,
+    y: (height - worldHeight * unit) / 2 + SPAWN_ALTITUDE * unit * 0.85,
+  };
+  cancelSteering();
 }
 new ResizeObserver(resize).observe(board);
 function render() {
@@ -313,19 +324,13 @@ function render() {
           gp = top(x, y, z),
           col = TYPES[state.current.type].color;
         ctx.save();
-        ctx.globalAlpha = 0.55;
+        ctx.globalAlpha = 0.24;
         polygon(gp, ghostValid ? col : "#e16e57");
         ctx.restore();
         path(gp);
         ctx.strokeStyle = ghostValid ? "#fffce8" : "#b44834";
         ctx.lineWidth = 1.7;
         ctx.stroke();
-        const point = project(x + 0.5, y + 0.5, z);
-        ctx.fillStyle = "#fffcef";
-        ctx.font = `bold ${Math.max(11, unit * 0.72)}px Arial`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(TYPES[state.current.type].icon, point.x, point.y);
       }
       if (
         w > 0.13 &&
@@ -365,39 +370,7 @@ function render() {
     ctx.arc(p.x - 2, p.y - 7, 1.6, 0, 7);
     ctx.fill();
   }
-  if (showGhost) {
-    const shape = cells(state.current),
-      cx = cursor.x + shape.reduce((a, p) => a + p[0], 0) / shape.length + 0.5,
-      cy = cursor.y + shape.reduce((a, p) => a + p[1], 0) / shape.length + 0.5,
-      i = Math.min(255, Math.max(0, Math.floor(cy) * SIZE + Math.floor(cx))),
-      p = project(
-        cx,
-        cy,
-        Math.max(state.terrain[i], state.terrain[i] + state.water[i]) + 2.1,
-      );
-    if (state.current.type === "rain") cloud(p.x, p.y, 0.55, 0.95);
-    else if (state.current.type === "sun") {
-      ctx.fillStyle = "#edc96c";
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, unit * 0.45, 0, 7);
-      ctx.fill();
-      ctx.strokeStyle = "#c6a34d";
-      ctx.lineWidth = 1.3;
-      for (let a = 0; a < 8; a++) {
-        const t = (a * Math.PI) / 4;
-        ctx.beginPath();
-        ctx.moveTo(
-          p.x + Math.cos(t) * unit * 0.6,
-          p.y + Math.sin(t) * unit * 0.6,
-        );
-        ctx.lineTo(
-          p.x + Math.cos(t) * unit * 0.8,
-          p.y + Math.sin(t) * unit * 0.8,
-        );
-        ctx.stroke();
-      }
-    }
-  }
+  if (showGhost) drawFallingPiece();
   particles = particles.filter((p) => p.life > 0);
   for (const p of particles) {
     p.life -= 1 / 60;
@@ -411,6 +384,91 @@ function render() {
     p.v -= 4 / 60;
   }
   ctx.globalAlpha = 1;
+}
+function drawFallingPiece() {
+  const shape = cells(state.current).sort((a, b) => a[0] + a[1] - b[0] - b[1]);
+  const cx =
+    cursor.x + shape.reduce((n, p) => n + p[0], 0) / shape.length + 0.5;
+  const cy =
+    cursor.y + shape.reduce((n, p) => n + p[1], 0) / shape.length + 0.5;
+  const contact = landingHeight(state, cursor),
+    altitude = Math.max(contact, state.altitude);
+  const from = project(cx, cy, contact + 0.05),
+    to = project(cx, cy, altitude + 0.16);
+  ctx.save();
+  ctx.setLineDash([3, 4]);
+  ctx.strokeStyle = "#38596970";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.restore();
+  for (const [dx, dy] of shape) {
+    const x = cursor.x + dx,
+      y = cursor.y + dy,
+      z = altitude + 0.16,
+      p = project(x + 0.5, y + 0.5, z);
+    if (state.dropping && !reduced) {
+      ctx.strokeStyle = "#f8fbefd0";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - unit * 0.8);
+      ctx.lineTo(p.x, p.y - unit * 1.8);
+      ctx.stroke();
+    }
+    if (state.current.type === "rain" || state.current.type === "sun") {
+      const radius = unit * (state.current.type === "rain" ? 0.55 : 0.5);
+      const light = ctx.createRadialGradient(
+        p.x - radius * 0.3,
+        p.y - radius * 0.35,
+        radius * 0.1,
+        p.x,
+        p.y,
+        radius,
+      );
+      light.addColorStop(
+        0,
+        state.current.type === "rain" ? "#d2f7ff" : "#fff5ad",
+      );
+      light.addColorStop(0.5, TYPES[state.current.type].color);
+      light.addColorStop(
+        1,
+        state.current.type === "rain" ? "#2384ad" : "#df9348",
+      );
+      ctx.fillStyle = light;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = state.current.type === "rain" ? "#e5fbffb0" : "#fff3ab";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (state.current.type === "sun") {
+        ctx.fillStyle = "#fffce7";
+        ctx.font = `${Math.max(12, unit)}px Georgia`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("✦", p.x, p.y);
+      }
+    } else {
+      const points = top(x, y, z + 0.32);
+      polygon(
+        [points[3], points[2], project(x + 1, y + 1, z), project(x, y + 1, z)],
+        state.current.type === "raise" ? "#66864b" : "#a97550",
+      );
+      polygon(
+        [points[1], points[2], project(x + 1, y + 1, z), project(x + 1, y, z)],
+        state.current.type === "raise" ? "#55793f" : "#956746",
+      );
+      polygon(points, TYPES[state.current.type].color, "#fffce6c0");
+      const arrow = project(x + 0.5, y + 0.5, z + 0.33);
+      ctx.fillStyle = "#fffce8";
+      ctx.font = `bold ${Math.max(12, unit * 0.9)}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(TYPES[state.current.type].icon, arrow.x, arrow.y);
+    }
+  }
 }
 let lastPiece = "";
 function drawPiece() {
@@ -469,8 +527,12 @@ function ui() {
   $("mode-label").textContent = state.mode.toUpperCase();
   $("timer").textContent =
     state.mode === "classic"
-      ? Math.ceil(state.remaining) + "s TO DROP"
-      : "TAKE YOUR TIME";
+      ? state.dropping
+        ? "DROPPING"
+        : "FALLING · " + state.remaining.toFixed(1) + "s"
+      : state.dropping
+        ? "DROPPING"
+        : "TAKE YOUR TIME";
   $("timer").style.color =
     state.mode === "classic" && state.remaining < 3 ? "#b15a3e" : "";
   $("turn-label").textContent =
@@ -479,22 +541,36 @@ function ui() {
     state.turn > 20
       ? "A LITTLE BALANCE GOES A LONG WAY"
       : "A GOOD DAY FOR A LITTLE RAIN";
-  $("rotate").disabled = paused || state.over;
-  $("drop").disabled = paused || state.over;
+  $("rotate").disabled = paused || state.over || state.dropping;
+  $("drop").disabled = paused || state.over || state.dropping;
+  document
+    .querySelectorAll("[data-nudge]")
+    .forEach((b) => (b.disabled = paused || state.over || state.dropping));
+  $("descent-meter").hidden = state.mode !== "classic" && !state.dropping;
+  const contact = landingHeight(state, cursor);
+  $("descent-bar").style.width =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        (1 -
+          (state.altitude - contact) /
+            Math.max(0.1, SPAWN_ALTITUDE - contact)) *
+          100,
+      ),
+    ) + "%";
   $("pause").disabled = !started || state.over;
   drawPiece();
 }
 function clampCursor() {
-  const pts = cells(state.current),
-    mx = Math.max(...pts.map((p) => p[0])),
-    my = Math.max(...pts.map((p) => p[1]));
-  cursor.x = Math.max(0, Math.min(SIZE - 1 - mx, cursor.x));
-  cursor.y = Math.max(0, Math.min(SIZE - 1 - my, cursor.y));
+  cursor = clampAim(cursor, state.current);
 }
 function drop() {
-  if (paused || state.over) return;
-  const event = applyPiece(state, cursor.x, cursor.y);
-  if (!event) return;
+  if (paused || !accelerateDrop(state)) return;
+  save();
+  ui();
+}
+function land(event) {
   tone(event.type);
   if (!reduced)
     for (const i of event.targets)
@@ -518,57 +594,96 @@ function drop() {
   else if (event.type === "lower")
     toast("Bank lowered. Watch where the water goes.");
   clampCursor();
+  rebaseDrag(drag, cursor);
   record();
   save();
   ui();
 }
 function rotate() {
-  if (paused || state.over) return;
+  if (paused || state.over || state.dropping) return;
   state.current.rotation = (state.current.rotation + 1) % 4;
   clampCursor();
+  rebaseDrag(drag, cursor);
   tone("raise");
   save();
   ui();
 }
 function locate(e) {
-  const r = board.getBoundingClientRect(),
-    sx = e.clientX - r.left,
-    sy = e.clientY - r.top - (e.pointerType === "touch" ? 38 : 0);
-  let closest = null,
-    distance = Infinity;
-  for (let y = 0; y < SIZE; y++)
-    for (let x = 0; x < SIZE; x++) {
-      const i = y * SIZE + x,
-        p = project(x + 0.5, y + 0.5, state.terrain[i] + state.water[i]),
-        d = Math.abs(sx - p.x) / unit + Math.abs(sy - p.y) / (unit * 0.5);
-      if (d < distance) {
-        distance = d;
-        closest = { x, y };
-      }
-    }
-  if (closest) {
-    cursor = closest;
-    clampCursor();
-  }
+  const r = board.getBoundingClientRect();
+  const sx = (e.clientX - r.left - origin.x) / unit;
+  const sy = (e.clientY - r.top - origin.y + 0.15 * unit * 0.85) / (unit * 0.5);
+  cursor = clampAim(
+    { x: Math.floor((sx + sy) / 2), y: Math.floor((sy - sx) / 2) },
+    state.current,
+  );
 }
-let pointerId = null;
+let pointerId = null,
+  drag = null,
+  nudgeHold = null;
+function cancelSteering() {
+  pointerId = null;
+  drag = null;
+  nudgeHold = null;
+}
 board.addEventListener("pointerdown", (e) => {
-  if (paused) return;
+  if (
+    paused ||
+    state.over ||
+    state.dropping ||
+    pointerId !== null ||
+    (e.pointerType === "mouse" && e.button !== 0)
+  )
+    return;
+  e.preventDefault();
   pointerId = e.pointerId;
   board.setPointerCapture(e.pointerId);
-  locate(e);
+  if (e.pointerType === "mouse") locate(e);
+  else drag = beginDrag({ x: e.clientX, y: e.clientY }, cursor, unit);
   board.focus({ preventScroll: true });
 });
 board.addEventListener("pointermove", (e) => {
-  if (!paused && (e.pointerType === "mouse" || e.pointerId === pointerId))
-    locate(e);
+  if (paused || state.over) return;
+  if (e.pointerId === pointerId && drag) {
+    if (state.dropping) {
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+      return;
+    }
+    cursor = moveDrag(drag, { x: e.clientX, y: e.clientY }, state.current);
+  } else if (e.pointerType === "mouse" && !state.dropping) locate(e);
 });
-board.addEventListener("pointerup", () => {
-  pointerId = null;
+for (const name of ["pointerup", "pointercancel", "lostpointercapture"])
+  board.addEventListener(name, (e) => {
+    if (e.pointerId === pointerId) {
+      pointerId = null;
+      drag = null;
+      save();
+    }
+  });
+function nudge(dx, dy) {
+  if (paused || state.over || state.dropping) return;
+  cursor = clampAim({ x: cursor.x + dx, y: cursor.y + dy }, state.current);
+  rebaseDrag(drag, cursor);
+  save();
+}
+document.querySelectorAll("[data-nudge]").forEach((button) => {
+  const [dx, dy] = button.dataset.nudge.split(",").map(Number);
+  button.addEventListener("pointerdown", (e) => {
+    if (button.disabled) return;
+    e.preventDefault();
+    button.setPointerCapture(e.pointerId);
+    nudge(dx, dy);
+    nudgeHold = { id: e.pointerId, dx, dy, next: performance.now() + 330 };
+  });
+  for (const name of ["pointerup", "pointercancel", "lostpointercapture"])
+    button.addEventListener(name, (e) => {
+      if (nudgeHold?.id === e.pointerId) nudgeHold = null;
+    });
+  button.addEventListener("click", (e) => {
+    if (e.detail === 0) nudge(dx, dy);
+  });
 });
-board.addEventListener("pointercancel", () => {
-  pointerId = null;
-});
+window.addEventListener("blur", cancelSteering);
 window.addEventListener("keydown", (e) => {
   if (e.code === "Escape") {
     e.preventDefault();
@@ -578,11 +693,7 @@ window.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if (
-    paused ||
-    ["BUTTON", "A", "INPUT"].includes(document.activeElement.tagName)
-  )
-    return;
+  if (paused || ["A", "INPUT"].includes(document.activeElement.tagName)) return;
   if (
     [
       "ArrowLeft",
@@ -594,16 +705,30 @@ window.addEventListener("keydown", (e) => {
     ].includes(e.code)
   )
     e.preventDefault();
-  if (e.code === "ArrowLeft") cursor.x--;
-  if (e.code === "ArrowRight") cursor.x++;
-  if (e.code === "ArrowUp") cursor.y--;
-  if (e.code === "ArrowDown") cursor.y++;
+  if (state.dropping) return;
+  if (e.code === "ArrowLeft") nudge(-1, 0);
+  if (e.code === "ArrowRight") nudge(1, 0);
+  if (e.code === "ArrowUp") nudge(0, -1);
+  if (e.code === "ArrowDown") nudge(0, 1);
   if (e.code === "KeyR") rotate();
   if (e.code === "Space") drop();
   clampCursor();
 });
-$("drop").onclick = drop;
-$("rotate").onclick = rotate;
+for (const [id, action] of [
+  ["drop", drop],
+  ["rotate", rotate],
+]) {
+  // Act on press so an action thumb responds while the first thumb steers.
+  // Keyboard activation still uses click, without duplicating pointer actions.
+  $(id).addEventListener("pointerdown", (e) => {
+    if ($(id).disabled || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.preventDefault();
+    action();
+  });
+  $(id).addEventListener("click", (e) => {
+    if (e.detail === 0) action();
+  });
+}
 $("pause").onclick = () => showDialog("pause");
 $("help").onclick = () => showDialog("help");
 $("sound").onclick = () => {
@@ -613,12 +738,14 @@ $("sound").onclick = () => {
   if (soundOn) tone("rain");
 };
 if (matchMedia("(pointer: coarse)").matches)
-  $("input-tip").textContent = "Drag on the land to aim. Tap Drop to place.";
+  $("input-tip").textContent =
+    "Slide anywhere to steer · Lift & re-touch · Arrows fine-tune";
 let focusBeforeModal;
 function showDialog(kind) {
   if ($("overlay").hidden) focusBeforeModal = document.activeElement;
   dialogKind = kind;
   paused = true;
+  cancelSteering();
   accumulator = 0;
   save();
   $("overlay").hidden = false;
@@ -663,10 +790,10 @@ function showDialog(kind) {
     title.innerHTML = "Go with<br>the <em>flow.</em>";
     copy.className = "instructions";
     copy.innerHTML =
-      "<b>↑ Raise</b> banks to hold the water.<br><b>↓ Lower</b> land to carve or connect lakes.<br><b>● Rain</b> falls wherever you place it.<br><b>✦ Sun</b> dries nearby water for points.<br><br>Water spills off open edges. Fill the overflow gauge and your run ends.";
+      "<b>↑ Raise</b> banks to hold the water.<br><b>↓ Lower</b> land to carve or connect lakes.<br><b>● Rain</b> fills the spot where it lands.<br><b>✦ Sun</b> dries nearby water for points.<br><br><b>Classic:</b> steer and rotate as pieces fall. Drop makes them fall faster.<br><b>Daydream:</b> pieces wait until you press Drop.<br>Overflow ends the run.";
     start.textContent = started ? "Back to your landscape ↗" : "Got it ↗";
     $("modal-foot").textContent =
-      "Drag or point to aim. Rotate, then Drop. Keyboard: arrows / R / Space.";
+      "Slide to steer. Lift and re-touch without moving the piece. Arrow buttons fine-tune. Keyboard: arrows / R / Space.";
   } else if (kind === "over") {
     record();
     title.innerHTML = "After<br>the <em>rain.</em>";
@@ -771,12 +898,16 @@ function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   if (!paused) animation += dt;
+  if (nudgeHold && now >= nudgeHold.next) {
+    nudge(nudgeHold.dx, nudgeHold.dy);
+    nudgeHold.next = now + 100;
+  }
   if (started && !paused && !state.over) {
     accumulator += dt;
     while (accumulator >= 1 / 30 && !state.over) {
-      tick(state, 1 / 30);
+      const landed = tick(state, 1 / 30, cursor);
       accumulator -= 1 / 30;
-      if (state.mode === "classic" && state.remaining <= 0) drop();
+      if (landed) land(landed);
     }
     if (state.over) {
       save();
@@ -808,6 +939,9 @@ if (import.meta.env.DEV)
     },
     get paused() {
       return paused;
+    },
+    get steering() {
+      return pointerId !== null && board.hasPointerCapture(pointerId);
     },
   };
 if ("serviceWorker" in navigator && import.meta.env.PROD)
