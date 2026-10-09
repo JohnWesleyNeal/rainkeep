@@ -27,12 +27,23 @@ import {
 } from "./controls.js";
 import { createSoundBank } from "./audio.js";
 import { createWorldRenderer } from "./renderer.js";
+import {
+  STAGES,
+  createStage,
+  stepStage,
+  stageProgress,
+  stageStars,
+  readProgress,
+  unlockedStages,
+  finishStage,
+} from "./stages.js";
 
 const $ = (id) => document.getElementById(id),
   board = $("board"),
   preview = $("piece").getContext("2d");
 const SAVE = "rainkeep.run.v1",
-  BEST = "rainkeep.best.v1";
+  BEST = "rainkeep.best.v1",
+  CAMPAIGN = "rainkeep.campaign.v1";
 const read = (k) => {
   try {
     return localStorage.getItem(k);
@@ -52,10 +63,13 @@ const write = (k, v) => {
   }
 };
 let saved = restore(read(SAVE)),
-  state = saved && !saved.over ? saved : createGame(),
+  state = saved && (!saved.over || saved.campaign) ? saved : createGame(),
   started = false,
   paused = true,
-  selectedMode = state.mode;
+  selectedMode = state.campaign ? "campaign" : state.mode;
+let campaignProgress = readProgress(read(CAMPAIGN)),
+  selectedStage =
+    state.campaign?.id ?? Math.min(11, unlockedStages(campaignProgress) - 1);
 let cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 },
   unit = 20,
   animation = 0,
@@ -90,6 +104,7 @@ function save() {
   }
 }
 function record() {
+  if (state.campaign) return;
   if (state.score > best[state.mode]) {
     best[state.mode] = state.score;
     write(BEST, JSON.stringify(best));
@@ -217,20 +232,21 @@ function ui() {
   if (!paused) dangerBand = band;
   $("quake-text").textContent = pressure + "%";
   $("quake-bar").style.width = pressure + "%";
-  $("quake-forecast").style.left = Math.min(100, risk.current * 100) + "%";
-  $("quake-forecast").style.width =
-    Math.max(0, projected - risk.current * 100) + "%";
-  $("quake-marker").hidden =
-    state.current.type !== "raise" || projected <= risk.current * 100;
+  const currentPressure = Math.min(100, risk.current * 100);
+  document.querySelector(".landscape").dataset.relief =
+    risk.projected < risk.current;
+  $("quake-forecast").style.left = Math.min(currentPressure, projected) + "%";
+  $("quake-forecast").style.width = Math.abs(projected - currentPressure) + "%";
+  $("quake-marker").hidden = Math.abs(projected - currentPressure) < 0.01;
   $("quake-marker").style.left = projected + "%";
   $("quake-text").textContent = crosses
     ? pressure + "% → QUAKE"
-    : pressure + "%";
+    : pressure + "%" + (risk.spikeRatio > 0.01 ? " • peaks" : "");
   document
     .querySelector(".quake-meter")
     .setAttribute(
       "aria-valuetext",
-      `${pressure}% raised land. After this piece: ${Math.round(risk.projected * 100)}%.`,
+      `${pressure}% pressure, including ${Math.round(risk.spikeRatio * 100)}% from isolated peaks. After this piece: ${Math.round(risk.projected * 100)}%.`,
     );
   const recovery = state.recovery;
   $("recovery-status").hidden = !recovery;
@@ -296,8 +312,18 @@ function ui() {
   $("next").textContent =
     TYPES[state.next.type].icon + " " + TYPES[state.next.type].name;
   $("mode-label").textContent = state.mode.toUpperCase();
+  const campaign = state.campaign;
+  $("stage-objective").hidden = !campaign;
+  if (campaign) {
+    $("mode-label").textContent =
+      "STAGE " + String(campaign.id + 1).padStart(2, "0");
+    $("stage-name").textContent = STAGES[campaign.id].name;
+    const progress = stageProgress(state);
+    $("stage-progress").textContent = progress.text;
+    $("stage-goal-bar").style.width = progress.ratio * 100 + "%";
+  }
   $("timer").textContent =
-    state.mode === "classic"
+    state.mode === "classic" || campaign?.falling
       ? state.dropping
         ? "DROPPING"
         : "FALLING · " + state.remaining.toFixed(1) + "s"
@@ -305,7 +331,9 @@ function ui() {
         ? "DROPPING"
         : "TAKE YOUR TIME";
   $("timer").style.color =
-    state.mode === "classic" && state.remaining < 3 ? "#ffae8c" : "";
+    (state.mode === "classic" || campaign?.falling) && state.remaining < 3
+      ? "#ffae8c"
+      : "";
   $("turn-label").textContent =
     "DROP " + String(state.turn + 1).padStart(2, "0");
   $("weather-label").textContent =
@@ -318,12 +346,19 @@ function ui() {
           " · " +
           Math.ceil(120 - (state.elapsed % 120)) +
           "s TO NEXT";
+  if (campaign) {
+    $("weather-label").textContent =
+      Math.max(0, campaign.budget - state.turn) + " DROPS LEFT";
+    $("turn-label").textContent =
+      "DROP " + (state.turn + 1) + " / " + campaign.budget;
+  }
   $("rotate").disabled = paused || state.over || state.dropping;
   $("drop").disabled = paused || state.over || state.dropping;
   document
     .querySelectorAll("[data-nudge]")
     .forEach((b) => (b.disabled = paused || state.over || state.dropping));
-  $("descent-meter").hidden = state.mode !== "classic" && !state.dropping;
+  $("descent-meter").hidden =
+    state.mode !== "classic" && !campaign?.falling && !state.dropping;
   const contact = landingHeight(state, cursor);
   $("descent-bar").style.width =
     Math.max(
@@ -356,15 +391,19 @@ function land(event) {
   if (event.type === "sun")
     toast(
       event.removed > 0.1
-        ? `Lake evaporated. +${event.earned} · ×${event.multiplier}`
+        ? state.campaign && !event.contained
+          ? "Water cleared, but that lake was leaking. Close its bank or let the splash settle."
+          : `Lake evaporated. +${event.earned} · ×${event.multiplier}`
         : state.noticeUntil > state.elapsed
           ? state.notice
           : "Aim Fire at a lake to score and lower the drain.",
     );
   else if (event.quake) toast(state.notice);
   else if (event.repaired) toast(`Hole repaired. +${event.earned}`);
-  else if (state.turn === 1) toast("Overlap Upper pieces to enclose dry land.");
-  else if (state.turn === 12) toast("Water next. Aim inside your enclosure.");
+  else if (state.turn === 1 && event.type === "raise")
+    toast("Overlap Upper pieces to enclose dry land.");
+  else if (state.turn === 12 && state.mode === "classic")
+    toast("Water next. Aim inside your enclosure.");
   else if (event.type === "lower")
     toast("Footprint leveled to its lowest point. Watch your banks.");
   clampCursor();
@@ -484,7 +523,11 @@ board.addEventListener("webglcontextrestored", () => {
 window.addEventListener("keydown", (e) => {
   if (e.code === "Escape") {
     e.preventDefault();
-    if (started && !state.over) {
+    if (
+      started &&
+      !state.over &&
+      (!state.campaign || state.campaign.status === "playing")
+    ) {
       if (paused) resume();
       else showDialog("pause");
     }
@@ -572,14 +615,78 @@ function showDialog(kind) {
     second = $("secondary");
   copy.className = "";
   $("intro-rules").hidden = kind !== "start" && kind !== "new";
-  $("mode-picker").hidden = kind !== "start" && kind !== "new";
+  $("mode-picker").hidden = !["start", "new", "stages"].includes(kind);
+  $("stage-picker").hidden = kind !== "stages";
+  $("campaign-menu").hidden =
+    !state.campaign || kind === "stages" || kind === "new";
   second.hidden = true;
   $("modal-eyebrow").textContent = "A SMALL WORLD. A SIMPLE CHALLENGE.";
   $("modal-foot").textContent = "Best played with a little curiosity.";
-  if (kind === "start" || kind === "new") {
+  if (kind === "stages") {
+    selectedMode = "campaign";
+    $("modal-eyebrow").textContent = "TWELVE LITTLE WORLDS";
+    title.innerHTML = "A little<br><em>journey.</em>";
+    const def = STAGES[selectedStage];
+    copy.innerHTML = `<b>${String(selectedStage + 1).padStart(2, "0")} · ${def.name}</b><br>${def.goal}<br><small>${def.hint}<br>${def.budget} drops available · medal target: ${def.par} drops.</small>`;
+    const picker = $("stage-picker");
+    picker.replaceChildren();
+    STAGES.forEach((d, i) => {
+      const b = document.createElement("button");
+      b.dataset.stage = i;
+      b.disabled = i >= unlockedStages(campaignProgress);
+      b.className = i === selectedStage ? "selected" : "";
+      b.textContent =
+        String(i + 1).padStart(2, "0") +
+        " " +
+        d.name +
+        " " +
+        ("★".repeat(campaignProgress.stars[i]) ||
+          (b.disabled ? "· locked" : ""));
+      b.setAttribute("aria-pressed", String(i === selectedStage));
+      b.onclick = () => {
+        selectedStage = i;
+        showDialog("stages");
+      };
+      picker.append(b);
+    });
+    start.textContent = "Play " + def.name + " ↗";
+    if (started || state.campaign) {
+      second.hidden = false;
+      second.textContent =
+        state.campaign?.status === "complete" || state.over
+          ? "Back to your results"
+          : "Back to your landscape";
+    }
+    $("modal-foot").textContent =
+      "Finish a stage to unlock the next. Medals reward fewer drops and a low drain. Early stages wait for Drop; falling pieces arrive at stage 8.";
+  } else if (kind === "stage-complete") {
+    campaignProgress = finishStage(campaignProgress, state);
+    write(CAMPAIGN, JSON.stringify(campaignProgress));
+    $("modal-eyebrow").textContent =
+      "STAGE " + (state.campaign.id + 1) + " COMPLETE";
+    title.innerHTML = "Pond<br><em>kept.</em>";
+    const stars = stageStars(state);
+    copy.innerHTML = `<b>${STAGES[state.campaign.id].name} · ${"★".repeat(stars)}${"☆".repeat(3 - stars)}</b><br>${state.score.toLocaleString()} points · ${state.turn} drops.<br>${state.campaign.id === 11 ? "You finished all twelve little worlds." : STAGES[state.campaign.id + 1].name + " is unlocked."}`;
+    start.textContent =
+      state.campaign.id === 11
+        ? "Back to the stages ↗"
+        : "Choose the next stage ↗";
+    second.hidden = false;
+    second.textContent = "Replay this stage";
+    $("modal-foot").textContent =
+      "One medal for finishing. Two for the drop target. Three for meeting that target with a low drain and no new earthquake.";
+  } else if (kind === "over" && state.campaign) {
+    $("modal-eyebrow").textContent =
+      "STAGE " + (state.campaign.id + 1) + " · TRY AGAIN";
+    title.innerHTML = "Another<br><em>little try.</em>";
+    const d = STAGES[state.campaign.id];
+    copy.innerHTML = `<b>${d.name}</b><br>${state.turn >= state.campaign.budget ? "The last piece landed before the goal was complete." : d.noQuake && state.quakes > state.campaign.startingQuakes ? "An earthquake ended this challenge." : d.maxDrain && state.campaign.worstDrain >= d.maxDrain ? "The drain crossed this stage’s limit." : "The drain filled."}<br>${d.goal}`;
+    start.textContent = "Retry this stage ↗";
+    $("modal-foot").textContent = d.hint;
+  } else if (kind === "start" || kind === "new") {
     title.innerHTML = "Keep a little<br><em>rain.</em>";
     copy.innerHTML =
-      "Classic starts flat and dry. Build enclosures with Uppers before water arrives.<br>Keep the drain low. Fire clears lakes; too much land risks earthquakes.";
+      "Choose Stages for twelve little challenges, saved unlocks and medals.<br>Classic starts flat and dry: build enclosures before water arrives. Daydream lets you practice.<br>Keep the drain low. Fire clears lakes; tall isolated peaks add earthquake pressure.";
     start.textContent =
       kind === "start" && saved && !saved.over
         ? "Continue your landscape ↗"
@@ -606,7 +713,7 @@ function showDialog(kind) {
     title.innerHTML = "Go with<br>the <em>flow.</em>";
     copy.className = "instructions";
     copy.innerHTML =
-      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Excess land triggers earthquakes. The solid meter shows current land; the striped extension forecasts your Upper. Pale foam marks active leaks. After a quake, rebuild damaged ground and hold a contained liquid lake for 2 seconds within 45 seconds to earn 500 × level.<br>Level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Classic:</b> dry start with falling pieces.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
+      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Land adds earthquake pressure; narrow towers above bank height add extra. Spread or lower tall peaks to keep pressure down. Water and ice add none. The striped forecast shows an Upper’s increase or a Downer’s relief. Pale foam marks active leaks. After a quake, rebuild damaged ground and hold a contained liquid lake for 2 seconds within 45 seconds to earn 500 × level.<br>Classic level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Stages:</b> twelve authored challenges with saved unlocks and medals. The first seven wait for Drop; later stages introduce falling pieces.<br><b>Classic:</b> dry start with falling pieces.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
     start.textContent = started ? "Back to your landscape ↗" : "Got it ↗";
     $("modal-foot").textContent =
       "Slide to steer; re-touch keeps your aim. Arrows: fine steps. Keyboard: arrows / Shift for larger steps / R / Space.";
@@ -626,6 +733,14 @@ function showDialog(kind) {
   start.focus({ preventScroll: true });
 }
 function resume() {
+  if (state.campaign?.status === "failed") {
+    showDialog("over");
+    return;
+  }
+  if (state.campaign?.status === "complete") {
+    showDialog("stage-complete");
+    return;
+  }
   sounds.unlock();
   paused = false;
   started = true;
@@ -640,8 +755,11 @@ function resume() {
   ).focus({ preventScroll: true });
 }
 function newGame() {
-  state = createGame(selectedMode);
-  cursor = { x: 8, y: 8 };
+  state =
+    selectedMode === "campaign"
+      ? createStage(selectedStage)
+      : createGame(selectedMode);
+  cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 };
   world.clear();
   saved = null;
   lastPiece = "";
@@ -650,13 +768,23 @@ function newGame() {
   lastNotice = "";
   dangerBand = 0;
   toast(
-    state.mode === "classic"
-      ? "Flat and dry. Build your own lakes before water arrives."
-      : "Practice lake ready. Pieces wait for Drop.",
+    state.campaign
+      ? STAGES[state.campaign.id].goal
+      : state.mode === "classic"
+        ? "Flat and dry. Build your own lakes before water arrives."
+        : "Practice lake ready. Pieces wait for Drop.",
   );
 }
 $("start").onclick = () => {
-  if (dialogKind === "pause") resume();
+  if (dialogKind === "stages") newGame();
+  else if (dialogKind === "stage-complete") {
+    selectedStage = Math.min(11, state.campaign.id + 1);
+    showDialog("stages");
+  } else if (dialogKind === "over" && state.campaign) {
+    selectedMode = "campaign";
+    selectedStage = state.campaign.id;
+    newGame();
+  } else if (dialogKind === "pause") resume();
   else if (dialogKind === "help") {
     if (started) resume();
     else showDialog("start");
@@ -668,16 +796,38 @@ $("start").onclick = () => {
   } else newGame();
 };
 $("secondary").onclick = () => {
-  if (dialogKind === "new") {
+  if (dialogKind === "stage-complete") {
+    selectedMode = "campaign";
+    selectedStage = state.campaign.id;
+    newGame();
+  } else if (dialogKind === "stages") {
+    if (state.campaign?.status === "complete") showDialog("stage-complete");
+    else if (state.over) showDialog("over");
+    else if (started) resume();
+    else showDialog("start");
+  } else if (dialogKind === "new") {
     if (state.over) showDialog("over");
     else if (started) resume();
     else showDialog("start");
   } else showDialog("new");
 };
+$("campaign-menu").onclick = () => {
+  selectedMode = "campaign";
+  selectedStage = state.campaign.id;
+  showDialog("stages");
+};
 document.querySelectorAll("[data-mode]").forEach(
   (b) =>
     (b.onclick = () => {
       selectedMode = b.dataset.mode;
+      if (selectedMode === "campaign") {
+        showDialog("stages");
+        return;
+      }
+      if (dialogKind === "stages") {
+        showDialog("new");
+        return;
+      }
       document.querySelectorAll("[data-mode]").forEach((v) => {
         const active = v === b;
         v.classList.toggle("selected", active);
@@ -688,7 +838,7 @@ document.querySelectorAll("[data-mode]").forEach(
 $("overlay").addEventListener("keydown", (e) => {
   if (e.key !== "Tab") return;
   const focusables = [...$("overlay").querySelectorAll("button")].filter(
-    (b) => b.offsetParent !== null,
+    (b) => b.offsetParent !== null && !b.disabled,
   );
   const first = focusables[0],
     end = focusables.at(-1);
@@ -727,12 +877,21 @@ function frame(now) {
   }
   if (started && !paused && !state.over) {
     accumulator += dt;
-    while (accumulator >= 1 / 30 && !state.over) {
+    while (
+      accumulator >= 1 / 30 &&
+      !state.over &&
+      (!state.campaign || state.campaign.status === "playing")
+    ) {
       const landed = tick(state, 1 / 30, cursor);
+      stepStage(state, landed, 1 / 30);
       accumulator -= 1 / 30;
       if (landed) land(landed);
     }
-    if (state.over) {
+    if (state.campaign?.status === "complete") {
+      save();
+      showDialog("stage-complete");
+      tone("recovery");
+    } else if (state.over) {
       save();
       showDialog("over");
     }
@@ -750,7 +909,13 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 resize();
-showDialog("start");
+showDialog(
+  state.campaign?.status === "complete"
+    ? "stage-complete"
+    : state.campaign?.status === "failed"
+      ? "over"
+      : "start",
+);
 requestAnimationFrame(frame);
 if (import.meta.env.DEV)
   window.__rainkeep = {

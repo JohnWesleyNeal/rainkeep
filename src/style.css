@@ -1661,3 +1661,108 @@ footer > span:nth-child(2) {
     transition: none;
   }
 }
+
+.mode-picker {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: grid;
+}
+#stage-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0 0 16px;
+}
+#stage-picker[hidden],
+#stage-objective[hidden] {
+  display: none;
+}
+#stage-picker button {
+  min-height: 48px;
+  padding: 10px;
+  border: 1px solid #b5d8bf38;
+  border-radius: 10px;
+  background: #214651;
+  color: #dce9cf;
+  font-size: 11px;
+  text-align: left;
+  line-height: 1.4;
+}
+#stage-picker button.selected {
+  background: #396157;
+  border-color: #c8e2a6;
+}
+#stage-picker button:disabled {
+  opacity: 0.4;
+}
+#stage-objective {
+  position: absolute;
+  top: 43px;
+  left: 14px;
+  width: 185px;
+  max-width: calc(100% - 214px);
+  z-index: 3;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: #163d4bcc;
+  border: 1px solid #d7efd342;
+  color: #edf1d9;
+  pointer-events: none;
+}
+#stage-objective strong {
+  display: block;
+  font:
+    16px Georgia,
+    serif;
+  margin-bottom: 5px;
+}
+#stage-progress {
+  display: block;
+  font-size: 9px;
+  line-height: 1.5;
+  color: #cbdcc4;
+}
+.stage-goal-meter {
+  height: 4px;
+  margin-top: 7px;
+  border-radius: 3px;
+  background: #082a39;
+  overflow: hidden;
+}
+#stage-goal-bar {
+  display: block;
+  height: 100%;
+  background: #b5dda4;
+  transition: width 0.15s;
+}
+.landscape[data-relief="true"] #quake-marker {
+  background: #bdf3c0;
+}
+.landscape[data-relief="true"] #quake-forecast {
+  background: repeating-linear-gradient(
+    120deg,
+    #bdf3c088 0 2px,
+    transparent 2px 4px
+  );
+}
+@media (max-width: 650px),
+  (pointer: coarse) and (max-width: 1100px) and (max-height: 700px) {
+  #stage-objective {
+    top: 36px;
+    left: 10px;
+    width: 155px;
+    max-width: calc(100% - 185px);
+    padding: 7px 9px;
+  }
+  #stage-objective strong {
+    font-size: 13px;
+  }
+  #stage-progress {
+    font-size: 8px;
+  }
+  .mode-picker button {
+    padding: 10px 6px;
+  }
+  .mode-picker small {
+    font-size: 8px;
+  }
+}

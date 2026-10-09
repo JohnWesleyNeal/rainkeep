@@ -21,12 +21,12 @@
       <header class="masthead">
         <a class="brand" href="./" aria-label="Rainkeep home"
           ><span class="brand-mark">≋</span> rainkeep<span class="brand-dot"
-            >10</span
+            >11</span
           ></a
         >
         <span class="edition"
           >A LITTLE LANDSCAPE PUZZLE
-          <span>VOL. 10 / A LITTLE LIVING ISLAND</span></span
+          <span>VOL. 11 / TWELVE LITTLE WORLDS</span></span
         >
         <div class="utilities">
           <button
@@ -73,6 +73,10 @@
             tabindex="0"
             aria-label="Isometric landscape. Use arrow keys to position, R to rotate, and Space to drop a piece."
           ></canvas>
+          <div id="stage-objective" hidden>
+            <strong id="stage-name"></strong><span id="stage-progress"></span>
+            <div class="stage-goal-meter"><i id="stage-goal-bar"></i></div>
+          </div>
           <div class="board-caption">
             <button
               id="view"
@@ -214,15 +218,22 @@
           ><span><b>✦</b> Evaporate</span>
         </div>
         <div id="mode-picker" class="mode-picker">
+          <button data-mode="campaign" aria-pressed="false">
+            Stages<small>12 goals · saved progress</small>
+          </button>
           <button data-mode="daydream" class="selected" aria-pressed="true">
             Daydream<small>Practice with a starter lake</small></button
           ><button data-mode="classic" aria-pressed="false">
             Classic<small>Flat start · falling pieces</small>
           </button>
         </div>
+        <div id="stage-picker" hidden aria-label="Choose a stage"></div>
         <button id="start" class="primary">Let it rain <span>↗</span></button>
         <button id="secondary" class="text-btn" hidden>
           Start a fresh landscape
+        </button>
+        <button id="campaign-menu" class="text-btn" hidden>
+          Choose a stage
         </button>
         <p class="modal-foot" id="modal-foot">
           Best played with a little curiosity.

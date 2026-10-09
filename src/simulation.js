@@ -102,6 +102,8 @@ export function random(s) {
   return s.seed / 4294967296;
 }
 export function piece(s, turn) {
+  if (s.campaign?.queue?.length)
+    return { ...s.campaign.queue[turn % s.campaign.queue.length] };
   const opening = [5, 6, 5, 7, 5, 6, 5, 7, 5, 6, 5, 7];
   let type;
   if (turn < opening.length) type = "raise";
@@ -282,23 +284,59 @@ export function footprint(p, x, y) {
 }
 export const waterTotal = (s) => s.water.reduce((a, b) => a + b, 0);
 export const landMass = (s) => s.terrain.reduce((a, b) => a + b, 0);
+// Long banks have support along one axis. Narrow crowns lack it along both.
+export function terrainPressure(s) {
+  const mass = landMass(s),
+    spikes = [];
+  let surcharge = 0;
+  for (let i = 0; i < s.terrain.length; i++) {
+    const h = s.terrain[i];
+    if (h <= 4.2) continue;
+    const x = i % SIZE,
+      y = Math.floor(i / SIZE);
+    const average = (indices) =>
+      indices.length
+        ? indices.reduce((n, j) => n + s.terrain[j], 0) / indices.length
+        : h;
+    const horizontal = average(
+      [x >= 2 ? i - 2 : -1, x < SIZE - 2 ? i + 2 : -1].filter((j) => j >= 0),
+    );
+    const vertical = average(
+      [y >= 2 ? i - SIZE * 2 : -1, y < SIZE - 2 ? i + SIZE * 2 : -1].filter(
+        (j) => j >= 0,
+      ),
+    );
+    const prominence = Math.max(
+      0,
+      Math.min(h - horizontal, h - vertical) - 1.4,
+    );
+    const extra = (h - 4.2) * Math.min(1, prominence / 2.8) * 2;
+    if (extra > 0.01) {
+      spikes.push({ i, extra });
+      surcharge += extra;
+    }
+  }
+  return { mass, surcharge, spikes, total: mass + surcharge };
+}
 // Use the same area-weighted raise, height cap, and hole-repair rule as landing.
 export function quakePressure(s, aim = s.aim) {
-  const mass = landMass(s);
-  const added =
-    s.current.type === "raise" && aim
-      ? footprint(s.current, aim.x, aim.y).reduce(
-          (n, { i, weight }) =>
-            n +
-            (s.holes[i]
-              ? 0
-              : Math.min(MAX_HEIGHT - s.terrain[i], 1.4 * weight)),
-          0,
-        )
-      : 0;
+  const pressure = terrainPressure(s);
+  let projected = pressure.total;
+  if (["raise", "lower"].includes(s.current.type) && aim) {
+    const terrain = s.terrain.slice();
+    const covered = footprint(s.current, aim.x, aim.y);
+    const lowest = Math.min(...covered.map(({ i }) => terrain[i]));
+    for (const { i, weight } of covered)
+      if (s.current.type === "lower")
+        terrain[i] += (lowest - terrain[i]) * weight;
+      else if (!s.holes[i])
+        terrain[i] = Math.min(MAX_HEIGHT, terrain[i] + 1.4 * weight);
+    projected = terrainPressure({ terrain }).total;
+  }
   return {
-    current: mass / QUAKE_LIMIT,
-    projected: (mass + added) / QUAKE_LIMIT,
+    current: pressure.total / QUAKE_LIMIT,
+    projected: projected / QUAKE_LIMIT,
+    spikeRatio: pressure.surcharge / QUAKE_LIMIT,
   };
 }
 export const fallDuration = (s) => Math.max(2.8, 8 - (s.level - 1) * 0.55);
@@ -464,6 +502,8 @@ export function applyPiece(s, x, y) {
   let removed = 0,
     points = 0,
     repaired = 0,
+    thawed = false,
+    contained = false,
     quake = false,
     feedbackCells = targets,
     feedbackHeights = [],
@@ -525,6 +565,7 @@ export function applyPiece(s, x, y) {
   } else if (type === "sun") {
     const hit = bonus.groups.find((l) => l.cells.includes(center));
     if (hit?.frozen) {
+      thawed = true;
       for (const i of hit.cells) s.ice[i] = 0;
       announce(s, "Fire thawed the lake. Water remains.");
     } else if (hit) {
@@ -535,6 +576,7 @@ export function applyPiece(s, x, y) {
         s.mines = s.mines.filter((m) => !mines.includes(m));
         announce(s, "Mine detonated! Repair the hole.");
       } else {
+        contained = containedLake(s, hit);
         feedbackCells = hit.cells;
         feedbackHeights = hit.cells.map((i) => s.terrain[i] + s.water[i]);
         for (const i of hit.cells) {
@@ -550,7 +592,7 @@ export function applyPiece(s, x, y) {
       announce(s, "Dry fire flattened land. No hole created.");
     }
   } else if (type === "bomb") explode(s, x, y);
-  if (landMass(s) >= QUAKE_LIMIT) {
+  if (terrainPressure(s).total >= QUAKE_LIMIT) {
     earthquake(s);
     quake = true;
   }
@@ -572,6 +614,8 @@ export function applyPiece(s, x, y) {
     targets,
     removed,
     repaired,
+    thawed,
+    contained,
     repairCells,
     feedbackCells,
     feedbackHeights,
@@ -584,18 +628,22 @@ export function applyPiece(s, x, y) {
 // Recovery requires a real, liquid enclosure, rather than merely adding land.
 export function containedLake(s, lake) {
   if (lake.frozen || lake.volume < 12) return false;
-  const inside = new Set(lake.cells);
-  return lake.cells.every((i) => {
+  const level = Math.max(...lake.cells.map((i) => s.terrain[i] + s.water[i]));
+  const inside = new Set(lake.cells),
+    stack = [...lake.cells];
+  while (stack.length) {
+    const i = stack.pop();
     const x = i % SIZE,
       y = Math.floor(i / SIZE);
     if (s.holes[i] || x === 0 || y === 0 || x === SIZE - 1 || y === SIZE - 1)
       return false;
-    return neighbors(i).every(
-      (j) =>
-        inside.has(j) ||
-        (!s.holes[j] && s.terrain[j] >= s.terrain[i] + s.water[i] + 0.04),
-    );
-  });
+    for (const j of neighbors(i))
+      if (!inside.has(j) && s.terrain[j] < level + 0.04) {
+        inside.add(j);
+        stack.push(j);
+      }
+  }
+  return true;
 }
 function recoveryTick(s, dt) {
   const r = s.recovery;
@@ -609,6 +657,7 @@ function recoveryTick(s, dt) {
   if (r.stable >= 2 - 1e-8) {
     const earned = 500 * s.level;
     s.score += earned;
+    if (s.campaign) s.campaign.recoveries++;
     s.recovery = null;
     announce(s, `Back in balance! +${earned} recovery bonus.`);
   }
@@ -681,8 +730,12 @@ export function freezeLake(s, x, y) {
   }
 }
 function events(s, dt) {
-  for (let i = 0; i < s.ice.length; i++) s.ice[i] = Math.max(0, s.ice[i] - dt);
-  const level = Math.min(10, 1 + Math.floor(s.elapsed / LEVEL_SECONDS));
+  if (!s.campaign?.lockIce)
+    for (let i = 0; i < s.ice.length; i++)
+      s.ice[i] = Math.max(0, s.ice[i] - dt);
+  const level = s.campaign
+    ? s.level
+    : Math.min(10, 1 + Math.floor(s.elapsed / LEVEL_SECONDS));
   if (level > s.level) {
     if (bonuses(s).lakes >= 5) s.smartBombs = Math.min(9, s.smartBombs + 1);
     s.level = level;
@@ -745,7 +798,7 @@ export function tick(s, dt, aim = s.aim || { x: 8, y: 8 }) {
   flow(s, dt);
   recoveryTick(s, dt);
   if (s.over || !validPlacement(s.current, aim.x, aim.y)) return;
-  if (s.mode === "classic" || s.dropping) {
+  if (s.mode === "classic" || s.campaign?.falling || s.dropping) {
     const contact = landingHeight(s, aim),
       speed = s.dropping ? 64 : SPAWN_ALTITUDE / fallDuration(s);
     s.altitude = Math.max(0, s.altitude - speed * dt);
@@ -893,6 +946,33 @@ export function restore(raw) {
     )
       return null;
     s.version = 3;
+    if (
+      s.campaign !== undefined &&
+      (!Number.isInteger(s.campaign.id) ||
+        !finite(s.campaign.id, 0, 11) ||
+        !["playing", "complete", "failed"].includes(s.campaign.status) ||
+        !Array.isArray(s.campaign.queue) ||
+        !s.campaign.queue.length ||
+        s.campaign.queue.length > 64 ||
+        !s.campaign.queue.every(okPiece) ||
+        !Number.isInteger(s.campaign.budget) ||
+        !finite(s.campaign.budget, 1, 80) ||
+        typeof s.campaign.falling !== "boolean" ||
+        typeof s.campaign.lockIce !== "boolean" ||
+        ![
+          "evaporated",
+          "clears",
+          "repairs",
+          "thaws",
+          "detonations",
+          "recoveries",
+          "stable",
+          "peakDucks",
+          "worstDrain",
+          "startingQuakes",
+        ].every((k) => finite(s.campaign[k], 0, 1e10)))
+    )
+      return null;
     if (s.recovery === undefined) s.recovery = null;
     if (
       s.recovery !== null &&

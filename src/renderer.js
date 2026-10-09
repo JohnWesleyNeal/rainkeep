@@ -5,7 +5,7 @@ import {
   cells,
   landingHeight,
   waterBubbles,
-  landMass,
+  terrainPressure,
   QUAKE_LIMIT,
 } from "./simulation.js";
 import { leakPaths, evaporationProfile } from "./atmosphere.js";
@@ -566,7 +566,8 @@ export function createWorldRenderer(canvas, reduced = false) {
   const color = new THREE.Color();
   const grass = new THREE.Color(0x7f9f8c),
     high = new THREE.Color(0xcadba2),
-    wet = new THREE.Color(0x7eada0);
+    wet = new THREE.Color(0x7eada0),
+    peak = new THREE.Color(0xf5a46c);
   const sample = (array, x, y) => {
     let sum = 0,
       count = 0;
@@ -583,7 +584,11 @@ export function createWorldRenderer(canvas, reduced = false) {
   };
   const holesHeight = new Float32Array(SIZE * SIZE);
   const lastHoles = new Uint8Array(SIZE * SIZE);
+  const peakHeat = new Float32Array(SIZE * SIZE);
   function updateLandscape(s, dt) {
+    peakHeat.fill(0);
+    for (const { i, extra } of terrainPressure(s).spikes)
+      peakHeat[i] = Math.min(1, extra / 5.6);
     if (s.holes.some((v, i) => Number(v) !== lastHoles[i])) {
       const openIndices = [];
       for (let y = 0; y < SIZE; y++)
@@ -652,7 +657,8 @@ export function createWorldRenderer(canvas, reduced = false) {
         color
           .copy(grass)
           .lerp(high, Math.min(1, Math.max(0, z) / 4))
-          .lerp(wet, Math.min(0.35, depth * 0.18));
+          .lerp(wet, Math.min(0.35, depth * 0.18))
+          .lerp(peak, sample(peakHeat, x, y) * 0.45);
         color.toArray(colors, v * 3);
         // Dry banks must not lift the liquid surface. Average the actual
         // free-surface heights of wet neighbors; depth testing clips the shore.
@@ -1067,7 +1073,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     }
     feedback.anticipate(
       s,
-      landMass(s) / QUAKE_LIMIT,
+      terrainPressure(s).total / QUAKE_LIMIT,
       dt,
       options.paused || !options.showPiece,
     );
@@ -1207,6 +1213,11 @@ export function createWorldRenderer(canvas, reduced = false) {
     },
     clear() {
       feedback.clear();
+      ducks.forEach((g) => {
+        g.userData.reaction = null;
+        g.visible = false;
+        g.scale.setScalar(1);
+      });
       lastPieceTurn = -1;
       shake = 0;
       lastUpdate = -1;
@@ -1255,6 +1266,7 @@ function createCanvasRenderer(canvas, reduced = false) {
   }
   function render(s, aim, t, dt, o) {
     ctx.clearRect(0, 0, width, height);
+    const warmPeaks = new Set(terrainPressure(s).spikes.map(({ i }) => i));
     polygon(
       [
         project(0, SIZE),
@@ -1292,7 +1304,11 @@ function createCanvasRenderer(canvas, reduced = false) {
           project(x + 1, y + 1, h),
           project(x, y + 1, h),
         ],
-        s.holes[i] ? "#a1e2ed" : `hsl(137 20% ${56 + h * 2}%)`,
+        s.holes[i]
+          ? "#a1e2ed"
+          : warmPeaks.has(i)
+            ? "#d4b484"
+            : `hsl(137 20% ${56 + h * 2}%)`,
       );
       if (w > 0.04)
         polygon(

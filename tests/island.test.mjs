@@ -4,6 +4,7 @@ import {
   createGame,
   quakePressure,
   landMass,
+  terrainPressure,
   QUAKE_LIMIT,
   applyPiece,
   earthquake,
@@ -28,7 +29,10 @@ test("earthquake forecast matches capped fractional Uppers and connected-hole re
     s.holes[11 * 32 + 11] = true;
     const forecast = quakePressure(s, { x, y });
     applyPiece(s, x, y);
-    assert.ok(Math.abs(forecast.projected * QUAKE_LIMIT - landMass(s)) < 1e-8);
+    assert.ok(
+      Math.abs(forecast.projected * QUAKE_LIMIT - terrainPressure(s).total) <
+        1e-8,
+    );
   }
 });
 test("water and ice add no pressure and non-Uppers have no added forecast", () => {
@@ -40,6 +44,7 @@ test("water and ice add no pressure and non-Uppers have no added forecast", () =
   assert.deepEqual(quakePressure(s, { x: 8, y: 8 }), {
     current: 0,
     projected: 0,
+    spikeRatio: 0,
   });
 });
 test("quake damage preserves part of the structure and starts a saved recovery window", () => {
@@ -114,8 +119,11 @@ test("containment requires a safe perimeter, volume, and no drain mouth", () => 
     l = lakes(s)[0];
   assert.equal(containedLake(s, l), true);
   s.terrain[9 * 32 + 10] = 0;
+  assert.equal(containedLake(s, l), true);
+  s.terrain[8 * 32 + 10] = 0;
   assert.equal(containedLake(s, l), false);
   s.terrain[9 * 32 + 10] = 2.8;
+  s.terrain[8 * 32 + 10] = 2.8;
   s.holes[10 * 32 + 10] = true;
   assert.equal(containedLake(s, l), false);
 });

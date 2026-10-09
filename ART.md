@@ -8,6 +8,8 @@ Bomb holes remove the corresponding terrain and water triangles and cut through 
 
 A custom water shader separates pale shallow water, blue middle depths, and indigo deep water, with depth contours, view-dependent reflections, impact ripples, shoreline foam, and ice tint. Warm sun/cool sky lighting connects the island to the painted distant backdrop. Turns ease around the piece center, and terrain grows toward its committed height after contact; reduced-motion mode removes these transitions, sloshing, contained splashes, and token flicker.
 
+Edition 11 adds a restrained warm tint on isolated tall crowns that contribute extra earthquake pressure. It uses the same support calculation as the simulation; supported banks keep their existing colors. Downer forecasts show a mint relief band on the gauge. Campaign objectives occupy a compact corner panel beside the gauge. Starting another stage clears previous duck reactions and impact effects.
+
 ## Motion and original sound
 
 Water sways and stretches slightly during a fast drop while the liquid sloshes inside its shells. Fire has swaying flame volumes and rising embers. Bombs turn and wobble around their center while the fuse sparks. Model bases line up with the contact plane. A small arrival settle gives each new piece a little weight without changing its aim or physics.
