@@ -14,6 +14,10 @@ Edition 11 adds a restrained warm tint on isolated tall crowns that contribute e
 
 ## Motion and original sound
 
+Edition 13 makes the existing stages into field lessons followed by challenges. Contextual notes occupy the piece card, and a restrained mint contour follows the relevant bank, opening, lake or peak on the rendered surface. It marks an area of interest rather than an exact landing footprint; it does not steer the piece. The optional Watch rule button replaces the current preview with a small looping isometric rule demonstration, using the existing earth/water/fire palette and bubble drawing. It needs no video download or additional raster asset. Changing rules restores the actual piece preview. Pause stops the loop and reduced motion selects a still example. Canvas retains the same notes and contour.
+
+Stage completion keeps the full island visible while transient effects finish. Medals and a short takeaway replace the piece card, and the existing controls become Replay and Next. Physics stops until the player chooses; there is no automatic tutorial dialog or automatic advance. Standard pause/help, stage selection and failed-run retry screens remain available. Guide visibility saves independently of runs and medals.
+
 Water sways and stretches slightly during a fast drop while the liquid sloshes inside its shells. Fire has swaying flame volumes and rising embers. Bombs turn and wobble around their center while the fuse sparks. Model bases line up with the contact plane. A small arrival settle gives each new piece a little weight without changing its aim or physics.
 
 Landing feedback is specific to the piece: water splash droplets and concentric rings; fire embers, distributed steam, a short fade of the evaporated lake, and a floating score; bomb debris, smoke, an impact ring, and a restrained camera nudge. Effects freeze when paused, dispose transient resources after finishing, and are capped at sixteen batches. Reduced-motion mode skips these bursts and token movement.

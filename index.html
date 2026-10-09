@@ -21,12 +21,11 @@
       <header class="masthead">
         <a class="brand" href="./" aria-label="Rainkeep home"
           ><span class="brand-mark">≋</span> rainkeep<span class="brand-dot"
-            >12</span
+            >13</span
           ></a
         >
         <span class="edition"
-          >A LITTLE LANDSCAPE PUZZLE
-          <span>VOL. 12 / TWELVE LITTLE WORLDS</span></span
+          >A LITTLE LANDSCAPE PUZZLE <span>VOL. 13 / FIELD LESSONS</span></span
         >
         <div class="utilities">
           <button
@@ -127,7 +126,7 @@
           </div>
           <div class="piece-section">
             <div class="piece-heading">
-              <span class="eyebrow">IN YOUR HANDS</span
+              <span class="eyebrow" id="piece-heading-label">IN YOUR HANDS</span
               ><span id="timer">TAKE YOUR TIME</span>
             </div>
             <div class="piece-card">
@@ -139,12 +138,27 @@
               ></canvas>
               <div>
                 <h2 id="piece-name">Raise</h2>
-                <p id="piece-desc">Build a bank</p>
+                <p
+                  id="piece-desc"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  Build a bank
+                </p>
               </div>
               <span id="piece-symbol">↑</span>
             </div>
             <div class="next-row">
-              <span>NEXT UP</span><span id="next">↑ Raise</span>
+              <span id="next-label">NEXT UP</span
+              ><button
+                id="watch-rule"
+                type="button"
+                aria-pressed="false"
+                hidden
+              >
+                Watch rule ▷</button
+              ><span id="next">↑ Raise</span>
             </div>
             <div
               id="descent-meter"
@@ -219,7 +233,7 @@
         </div>
         <div id="mode-picker" class="mode-picker">
           <button data-mode="campaign" aria-pressed="false">
-            Stages<small>12 goals · saved progress</small>
+            Learn &amp; play<small>7 lessons · 5 challenges</small>
           </button>
           <button data-mode="daydream" class="selected" aria-pressed="true">
             Daydream<small>Practice with a starter lake</small></button
@@ -234,6 +248,9 @@
         </button>
         <button id="campaign-menu" class="text-btn" hidden>
           Choose a stage
+        </button>
+        <button id="lesson-toggle" class="text-btn" aria-pressed="true" hidden>
+          Lesson guides · on
         </button>
         <p class="modal-foot" id="modal-foot">
           Best played with a little curiosity.

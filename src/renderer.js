@@ -492,6 +492,25 @@ export function createWorldRenderer(canvas, reduced = false) {
   shadow.frustumCulled = false;
   shadow.renderOrder = 3;
   scene.add(shadow);
+  const lessonGeometry = new THREE.BufferGeometry();
+  const lessonPositions = new THREE.BufferAttribute(
+    new Float32Array(64 * 3),
+    3,
+  );
+  lessonGeometry.setAttribute("position", lessonPositions);
+  const lessonHalo = new THREE.LineLoop(
+    lessonGeometry,
+    new THREE.LineBasicMaterial({
+      color: 0xd8eeb3,
+      transparent: true,
+      opacity: 0.6,
+      depthWrite: false,
+    }),
+  );
+  lessonHalo.frustumCulled = false;
+  lessonHalo.renderOrder = 4;
+  lessonHalo.visible = false;
+  scene.add(lessonHalo);
   const ducks = [];
   function duck() {
     const g = new THREE.Group();
@@ -1177,6 +1196,20 @@ export function createWorldRenderer(canvas, reduced = false) {
       targetPositions.setXYZ(v, x - HALF, surfaceAt(x, y) + 0.045, y - HALF);
     }
     targetPositions.needsUpdate = true;
+    const focus = options.lessonTarget;
+    lessonHalo.visible = !!focus;
+    if (focus) {
+      for (let i = 0; i < lessonPositions.count; i++) {
+        const angle = (i / lessonPositions.count) * Math.PI * 2;
+        const x = focus.x + Math.cos(angle) * focus.radius;
+        const y = focus.y + Math.sin(angle) * focus.radius;
+        lessonPositions.setXYZ(i, x - HALF, surfaceAt(x, y) + 0.12, y - HALF);
+      }
+      lessonPositions.needsUpdate = true;
+      lessonHalo.material.opacity = reduced
+        ? 0.6
+        : 0.54 + Math.sin(time * 1.8) * 0.12;
+    }
     waterMaterial.uniforms.time.value = reduced ? 0 : time;
     spillMaterial.uniforms.time.value = reduced ? 0 : time;
     const activeDucks = new Set();
@@ -1393,6 +1426,7 @@ export function createWorldRenderer(canvas, reduced = false) {
         leakPaths: tracedLeaks.length,
         foamBeads: leakFoam.count,
         bankSpills: bankCurtains.count,
+        lessonHalo: lessonHalo.visible,
         shoreSegments,
         warmShoreSegments,
         waterlineCells: Array.from(shorePixels).filter(
@@ -1649,6 +1683,26 @@ function createCanvasRenderer(canvas, reduced = false) {
         ctx.arc(...point, Math.max(1, unit * 0.07), 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+    if (o.lessonTarget) {
+      const focus = o.lessonTarget;
+      ctx.strokeStyle = "#d8eeb3";
+      ctx.lineWidth = Math.max(1.3, unit * 0.12);
+      ctx.globalAlpha = reduced ? 0.6 : 0.54 + Math.sin(t * 1.8) * 0.12;
+      ctx.beginPath();
+      for (let i = 0; i <= 64; i++) {
+        const angle = (i / 64) * Math.PI * 2;
+        const x = focus.x + Math.cos(angle) * focus.radius;
+        const y = focus.y + Math.sin(angle) * focus.radius;
+        const j =
+          Math.min(SIZE - 1, Math.max(0, Math.floor(y))) * SIZE +
+          Math.min(SIZE - 1, Math.max(0, Math.floor(x)));
+        const p = project(x, y, s.terrain[j] + s.water[j] + 0.12);
+        if (i) ctx.lineTo(...p);
+        else ctx.moveTo(...p);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     if (o.showPiece && !s.over) {
       const z = Math.max(s.altitude, landingHeight(s, aim));

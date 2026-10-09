@@ -27,6 +27,8 @@ import {
 } from "./controls.js";
 import { createSoundBank } from "./audio.js";
 import { createWorldRenderer } from "./renderer.js";
+import { LESSON_COUNT, lessonFor, TAKEAWAYS } from "./lessons.js";
+import { drawLessonDemo } from "./lesson-demo.js";
 import {
   STAGES,
   createStage,
@@ -87,6 +89,26 @@ try {
     if (Number.isFinite(b?.[mode]) && b[mode] >= 0) best[mode] = b[mode];
 } catch {}
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let guideEnabled = read("rainkeep.guides") !== "off",
+  watchingRule = false,
+  activeLesson = null,
+  demoStartedAt = 0,
+  lessonFeedback = null,
+  completedState = null,
+  controlKind = "playing",
+  lastDescription = "";
+function describePiece(text, rule = null) {
+  const key = JSON.stringify([text, rule]);
+  if (key === lastDescription) return;
+  lastDescription = key;
+  if (rule) {
+    const cue = document.createElement("strong"),
+      detail = document.createElement("span");
+    cue.textContent = text;
+    detail.textContent = rule;
+    $("piece-desc").replaceChildren(cue, detail);
+  } else $("piece-desc").textContent = text;
+}
 const world = createWorldRenderer(board, reduced);
 board.dataset.graphics = world.kind;
 let worldBonus = bonuses(state),
@@ -142,14 +164,38 @@ window.addEventListener("resize", fitViewport);
 window.visualViewport?.addEventListener("resize", fitViewport);
 fitViewport();
 function render(dt) {
+  const celebrating = inlineComplete();
   world.render(state, cursor, animation, dt, {
-    paused,
-    showPiece: started && !state.over,
+    paused: paused && !celebrating,
+    showPiece: started && !state.over && state.campaign?.status !== "complete",
     bonuses: worldBonus,
+    lessonTarget:
+      guideEnabled && started && state.campaign?.status === "playing"
+        ? activeLesson?.target
+        : null,
   });
+  if (watchingRule && activeLesson)
+    drawLessonDemo(
+      preview,
+      activeLesson.key,
+      animation - demoStartedAt,
+      reduced,
+    );
 }
 let lastPiece = "";
 function drawPiece() {
+  if (watchingRule) return;
+  if (state.campaign?.status === "complete") {
+    const key = "kept-" + stageStars(state);
+    if (lastPiece === key) return;
+    lastPiece = key;
+    preview.clearRect(0, 0, 150, 100);
+    preview.fillStyle = "#ffd395";
+    preview.font = "31px Georgia";
+    preview.textAlign = "center";
+    preview.fillText("★".repeat(stageStars(state)), 75, 62);
+    return;
+  }
   const key = JSON.stringify(state.current);
   if (key === lastPiece) return;
   lastPiece = key;
@@ -220,6 +266,7 @@ function ui() {
   $("ducks").textContent = worldBonus.ducks;
   $("multiplier").textContent = "×" + worldBonus.multiplier;
   const risk = quakePressure(state, cursor);
+  if (state.campaign?.status === "complete") risk.projected = risk.current;
   const pressure = Math.min(100, Math.round(risk.current * 100));
   const projected = Math.min(100, risk.projected * 100);
   const band = risk.current >= 0.9 ? 2 : risk.current >= 0.75 ? 1 : 0;
@@ -269,7 +316,7 @@ function ui() {
     state.noticeUntil > state.elapsed &&
     state.notice !== lastNotice
   ) {
-    toast(state.notice);
+    if (!state.campaign || !guideEnabled) toast(state.notice);
     if (state.notice.startsWith("Back in balance!") && !paused)
       tone("recovery");
     lastNotice = state.notice;
@@ -307,20 +354,73 @@ function ui() {
       : "Every drop over the edge counts.";
   $("water").textContent = waterTotal(state).toFixed(1);
   $("piece-name").textContent = TYPES[state.current.type].name;
-  $("piece-desc").textContent = TYPES[state.current.type].label;
+  let description = TYPES[state.current.type].label,
+    descriptionRule = null;
   $("piece-symbol").textContent = TYPES[state.current.type].icon;
   $("next").textContent =
     TYPES[state.next.type].icon + " " + TYPES[state.next.type].name;
   $("mode-label").textContent = state.mode.toUpperCase();
   const campaign = state.campaign;
+  const complete = campaign?.status === "complete";
+  const guide = campaign && guideEnabled;
+  $("piece-heading-label").textContent = complete
+    ? "WHAT YOU LEARNED"
+    : guide
+      ? "FIELD NOTE"
+      : "IN YOUR HANDS";
+  document.querySelector(".app").dataset.lessons = String(!!guide);
+  document.querySelector(".app").dataset.completed = String(!!complete);
+  const nextLesson = guide ? lessonFor(state, worldBonus) : null;
+  if (nextLesson?.key !== activeLesson?.key) {
+    watchingRule = false;
+    lastPiece = "";
+  }
+  activeLesson = nextLesson;
+  $("watch-rule").hidden = !guide || complete;
+  $("next-label").hidden = !!guide;
+  $("watch-rule").textContent = watchingRule
+    ? "Piece preview ↻"
+    : "Watch rule ▷";
+  $("watch-rule").setAttribute("aria-pressed", String(watchingRule));
+  $("watch-rule").disabled = paused;
+  $("lesson-toggle").textContent = guideEnabled
+    ? "Lesson guides · on"
+    : "Lesson guides · off";
+  $("lesson-toggle").setAttribute("aria-pressed", String(guideEnabled));
+  if (guide && activeLesson) {
+    description =
+      lessonFeedback && lessonFeedback.until > state.elapsed
+        ? lessonFeedback.text
+        : activeLesson.cue;
+    descriptionRule = activeLesson.rule;
+  }
+  if (complete) {
+    $("piece-name").textContent = "Pond kept";
+    description = TAKEAWAYS[campaign.id];
+    descriptionRule = null;
+    $("piece-symbol").textContent = "";
+    $("next").textContent =
+      campaign.id === 11
+        ? "ALL TWELVE KEPT"
+        : "NEXT · " + STAGES[campaign.id + 1].name;
+  }
+  describePiece(description, descriptionRule);
   $("stage-objective").hidden = !campaign;
   if (campaign) {
     $("mode-label").textContent =
-      "STAGE " + String(campaign.id + 1).padStart(2, "0");
+      (campaign.id < LESSON_COUNT ? "LESSON " : "CHALLENGE ") +
+      String(campaign.id + 1).padStart(2, "0");
     $("stage-name").textContent = STAGES[campaign.id].name;
     const progress = stageProgress(state);
     $("stage-progress").textContent = progress.text;
     $("stage-goal-bar").style.width = progress.ratio * 100 + "%";
+    if (complete)
+      $("stage-progress").textContent =
+        "COMPLETE · " +
+        "★".repeat(stageStars(state)) +
+        " · " +
+        state.turn +
+        " drops";
   }
   $("timer").textContent =
     state.mode === "classic" || campaign?.falling
@@ -347,16 +447,43 @@ function ui() {
           Math.ceil(120 - (state.elapsed % 120)) +
           "s TO NEXT";
   if (campaign) {
-    $("weather-label").textContent =
-      Math.max(0, campaign.budget - state.turn) + " DROPS LEFT";
-    $("turn-label").textContent =
-      "DROP " + (state.turn + 1) + " / " + campaign.budget;
+    $("weather-label").textContent = complete
+      ? "POND KEPT"
+      : Math.max(0, campaign.budget - state.turn) + " DROPS LEFT";
+    $("turn-label").textContent = complete
+      ? state.turn + " DROPS"
+      : "DROP " + (state.turn + 1) + " / " + campaign.budget;
   }
-  $("rotate").disabled = paused || state.over || state.dropping;
-  $("drop").disabled = paused || state.over || state.dropping;
+  const falling = state.mode === "classic" || campaign?.falling;
+  const controls = complete ? "kept" : falling ? "falling" : "waiting";
+  if (controlKind !== controls) {
+    $("rotate").innerHTML = complete
+      ? "<span>↻</span> Replay"
+      : "<span>↻</span> Rotate <kbd>R</kbd>";
+    $("drop").innerHTML = complete
+      ? campaign.id === 11
+        ? "All stages <span>↗</span>"
+        : campaign.id + 1 < LESSON_COUNT
+          ? "Next lesson <span>↗</span>"
+          : "Next challenge <span>↗</span>"
+      : falling
+        ? "Drop faster <span>↘</span>"
+        : "Drop piece <span>↘</span>";
+    $("rotate").title = complete ? "Replay (R)" : "Rotate (R)";
+    controlKind = controls;
+  }
+  $("rotate").disabled = complete
+    ? !$("overlay").hidden
+    : paused || state.over || state.dropping;
+  $("drop").disabled = complete
+    ? !$("overlay").hidden
+    : paused || state.over || state.dropping;
   document
     .querySelectorAll("[data-nudge]")
-    .forEach((b) => (b.disabled = paused || state.over || state.dropping));
+    .forEach(
+      (b) => (b.disabled = complete || paused || state.over || state.dropping),
+    );
+  if (complete) $("timer").textContent = "TAKE A MOMENT";
   $("descent-meter").hidden =
     state.mode !== "classic" && !campaign?.falling && !state.dropping;
   const contact = landingHeight(state, cursor);
@@ -378,6 +505,18 @@ function clampCursor() {
   cursor = clampAim(cursor, state.current);
 }
 function drop() {
+  if (inlineComplete()) {
+    if (state.campaign.id === 11) {
+      selectedMode = "campaign";
+      selectedStage = 11;
+      showDialog("stages");
+    } else {
+      selectedMode = "campaign";
+      selectedStage = state.campaign.id + 1;
+      newGame();
+    }
+    return;
+  }
   if (paused || !accelerateDrop(state)) return;
   sounds.unlock();
   tone("drop");
@@ -388,7 +527,21 @@ function land(event) {
   tone(event.quake ? "quake" : event.detonated ? "bomb" : event.type, event);
   world.impact(event, state);
   if (event.piece) cursor = rotateAim(cursor, event.piece, state.current);
-  if (event.type === "sun")
+  if (state.campaign && guideEnabled) {
+    lessonFeedback =
+      event.type === "sun" &&
+      !event.thawed &&
+      !event.detonated &&
+      (!event.contained || event.removed < 0.1)
+        ? {
+            text:
+              event.removed > 0.1
+                ? "That lake leaked. Close its bank before Fire."
+                : "Fire landed on dry ground. Aim at the lake.",
+            until: state.elapsed + 6,
+          }
+        : null;
+  } else if (event.type === "sun")
     toast(
       event.removed > 0.1
         ? state.campaign && !event.contained
@@ -413,6 +566,12 @@ function land(event) {
   ui();
 }
 function rotate() {
+  if (inlineComplete()) {
+    selectedMode = "campaign";
+    selectedStage = state.campaign.id;
+    newGame();
+    return;
+  }
   if (paused || state.over || state.dropping) return;
   const before = { ...state.current };
   state.current.rotation = (state.current.rotation + 1) % 4;
@@ -521,12 +680,28 @@ board.addEventListener("webglcontextrestored", () => {
   toast("Landscape restored. Your run is saved.");
 });
 window.addEventListener("keydown", (e) => {
+  if (
+    inlineComplete() &&
+    e.target === board &&
+    ["Space", "Enter", "KeyR"].includes(e.code)
+  ) {
+    e.preventDefault();
+    if (e.code === "KeyR") rotate();
+    else drop();
+    return;
+  }
   if (e.code === "Escape") {
     e.preventDefault();
+    if (inlineComplete()) {
+      showDialog("pause");
+      return;
+    }
     if (
       started &&
       !state.over &&
-      (!state.campaign || state.campaign.status === "playing")
+      (!state.campaign ||
+        state.campaign.status === "playing" ||
+        state.campaign.status === "complete")
     ) {
       if (paused) resume();
       else showDialog("pause");
@@ -559,15 +734,29 @@ for (const [id, action] of [
   ["drop", drop],
   ["rotate", rotate],
 ]) {
+  let resultPress = false;
   // Act on press so an action thumb responds while the first thumb steers.
   // Keyboard activation still uses click, without duplicating pointer actions.
   $(id).addEventListener("pointerdown", (e) => {
     if ($(id).disabled || (e.pointerType === "mouse" && e.button !== 0)) return;
+    // Results may open a dialog or replace the board. Wait for release so the
+    // same touch cannot activate a newly revealed control beneath the finger.
+    if (inlineComplete()) {
+      resultPress = true;
+      return;
+    }
+    resultPress = false;
     e.preventDefault();
     action();
   });
   $(id).addEventListener("click", (e) => {
-    if (e.detail === 0) action();
+    if (resultPress || e.detail === 0) {
+      resultPress = false;
+      action();
+    }
+  });
+  $(id).addEventListener("pointercancel", () => {
+    resultPress = false;
   });
 }
 $("view").onclick = () => {
@@ -588,6 +777,19 @@ $("smart-bomb").onclick = () => {
   }
 };
 $("help").onclick = () => showDialog("help");
+$("watch-rule").onclick = () => {
+  watchingRule = !watchingRule;
+  demoStartedAt = animation;
+  lastPiece = "";
+  ui();
+};
+$("lesson-toggle").onclick = () => {
+  guideEnabled = !guideEnabled;
+  write("rainkeep.guides", guideEnabled ? "on" : "off");
+  watchingRule = false;
+  lastPiece = "";
+  ui();
+};
 $("sound").onclick = () => {
   soundOn = !soundOn;
   write("rainkeep.sound", soundOn ? "on" : "off");
@@ -599,6 +801,30 @@ if (matchMedia("(pointer: coarse)").matches)
   $("input-tip").textContent =
     "Slide to align · Re-touch keeps aim · Arrows: fine trim";
 let focusBeforeModal;
+function inlineComplete() {
+  return (
+    started && state.campaign?.status === "complete" && $("overlay").hidden
+  );
+}
+function showKept() {
+  paused = true;
+  started = true;
+  accumulator = 0;
+  cancelSteering();
+  watchingRule = false;
+  lessonFeedback = null;
+  $("toast").classList.remove("visible");
+  $("overlay").hidden = true;
+  document.querySelector(".app").inert = false;
+  if (completedState !== state) {
+    campaignProgress = finishStage(campaignProgress, state);
+    write(CAMPAIGN, JSON.stringify(campaignProgress));
+    completedState = state;
+    save();
+  }
+  ui();
+  board.focus({ preventScroll: true });
+}
 function showDialog(kind) {
   sounds.stop();
   if ($("overlay").hidden) focusBeforeModal = document.activeElement;
@@ -619,15 +845,17 @@ function showDialog(kind) {
   $("stage-picker").hidden = kind !== "stages";
   $("campaign-menu").hidden =
     !state.campaign || kind === "stages" || kind === "new";
+  $("lesson-toggle").hidden =
+    !state.campaign || !["pause", "help"].includes(kind);
   second.hidden = true;
   $("modal-eyebrow").textContent = "A SMALL WORLD. A SIMPLE CHALLENGE.";
   $("modal-foot").textContent = "Best played with a little curiosity.";
   if (kind === "stages") {
     selectedMode = "campaign";
-    $("modal-eyebrow").textContent = "TWELVE LITTLE WORLDS";
-    title.innerHTML = "A little<br><em>journey.</em>";
+    $("modal-eyebrow").textContent = "SEVEN LESSONS · FIVE CHALLENGES";
+    title.innerHTML = "Learn a little.<br><em>Keep a little.</em>";
     const def = STAGES[selectedStage];
-    copy.innerHTML = `<b>${String(selectedStage + 1).padStart(2, "0")} · ${def.name}</b><br>${def.goal}<br><small>${def.hint}<br>${def.budget} drops available · medal target: ${def.par} drops.</small>`;
+    copy.innerHTML = `<b>${selectedStage < LESSON_COUNT ? "Lesson" : "Challenge"} ${String(selectedStage + 1).padStart(2, "0")} · ${def.name}</b><br>${def.goal}<br><small>${TAKEAWAYS[selectedStage]}</small>`;
     const picker = $("stage-picker");
     picker.replaceChildren();
     STAGES.forEach((d, i) => {
@@ -658,23 +886,7 @@ function showDialog(kind) {
           : "Back to your landscape";
     }
     $("modal-foot").textContent =
-      "Finish a stage to unlock the next. Medals reward fewer drops and a low drain. Early stages wait for Drop; falling pieces arrive at stage 8.";
-  } else if (kind === "stage-complete") {
-    campaignProgress = finishStage(campaignProgress, state);
-    write(CAMPAIGN, JSON.stringify(campaignProgress));
-    $("modal-eyebrow").textContent =
-      "STAGE " + (state.campaign.id + 1) + " COMPLETE";
-    title.innerHTML = "Pond<br><em>kept.</em>";
-    const stars = stageStars(state);
-    copy.innerHTML = `<b>${STAGES[state.campaign.id].name} · ${"★".repeat(stars)}${"☆".repeat(3 - stars)}</b><br>${state.score.toLocaleString()} points · ${state.turn} drops.<br>${state.campaign.id === 11 ? "You finished all twelve little worlds." : STAGES[state.campaign.id + 1].name + " is unlocked."}`;
-    start.textContent =
-      state.campaign.id === 11
-        ? "Back to the stages ↗"
-        : "Choose the next stage ↗";
-    second.hidden = false;
-    second.textContent = "Replay this stage";
-    $("modal-foot").textContent =
-      "One medal for finishing. Two for the drop target. Three for meeting that target with a low drain and no new earthquake.";
+      "Learn on the board, at your pace. Watch rule shows a small demonstration; guides can be hidden from Pause. Medals reward efficient drops and a low drain.";
   } else if (kind === "over" && state.campaign) {
     $("modal-eyebrow").textContent =
       "STAGE " + (state.campaign.id + 1) + " · TRY AGAIN";
@@ -686,7 +898,7 @@ function showDialog(kind) {
   } else if (kind === "start" || kind === "new") {
     title.innerHTML = "Keep a little<br><em>rain.</em>";
     copy.innerHTML =
-      "Choose Stages for twelve little challenges, saved unlocks and medals.<br>Classic starts flat and dry: build enclosures before water arrives. Daydream lets you practice.<br>Keep the drain low. Fire clears lakes; tall isolated peaks add earthquake pressure.";
+      "Choose Learn & play for seven field lessons and five challenges, with saved progress.<br>Classic starts flat and dry: build enclosures before water arrives. Daydream lets you practice.<br>Keep the drain low. Fire clears lakes; tall isolated peaks add earthquake pressure.";
     start.textContent =
       kind === "start" && saved && !saved.over
         ? "Continue your landscape ↗"
@@ -713,7 +925,7 @@ function showDialog(kind) {
     title.innerHTML = "Go with<br>the <em>flow.</em>";
     copy.className = "instructions";
     copy.innerHTML =
-      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Land adds earthquake pressure; narrow towers above bank height add extra. Spread or lower tall peaks to keep pressure down. Water and ice add none. The striped forecast shows an Upper’s increase or a Downer’s relief. Pale foam marks active leaks. After a quake, rebuild damaged ground and hold a contained liquid lake for 2 seconds within 45 seconds to earn 500 × level.<br>Classic level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Stages:</b> twelve authored challenges with saved unlocks and medals. The first seven wait for Drop; later stages introduce falling pieces.<br><b>Classic:</b> dry start with falling pieces.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
+      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Land adds earthquake pressure; narrow towers above bank height add extra. Spread or lower tall peaks to keep pressure down. Water and ice add none. The striped forecast shows an Upper’s increase or a Downer’s relief. Pale foam marks active leaks. After a quake, rebuild damaged ground and hold a contained liquid lake for 2 seconds within 45 seconds to earn 500 × level.<br>Classic level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Learn & play:</b> seven field lessons, then five challenges. A quiet highlight and the piece-card note follow your actual landscape. Watch rule loops a demonstration in the preview; it never moves your piece. Guides can be hidden in Pause. Completion stays on the board; Next starts the following stage.<br><b>Classic:</b> dry start with falling pieces.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
     start.textContent = started ? "Back to your landscape ↗" : "Got it ↗";
     $("modal-foot").textContent =
       "Slide to steer; re-touch keeps your aim. Arrows: fine steps. Keyboard: arrows / Shift for larger steps / R / Space.";
@@ -738,7 +950,7 @@ function resume() {
     return;
   }
   if (state.campaign?.status === "complete") {
-    showDialog("stage-complete");
+    showKept();
     return;
   }
   sounds.unlock();
@@ -761,29 +973,26 @@ function newGame() {
       : createGame(selectedMode);
   cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 };
   world.clear();
+  watchingRule = false;
+  activeLesson = null;
+  lessonFeedback = null;
   saved = null;
   lastPiece = "";
   resume();
   save();
   lastNotice = "";
   dangerBand = 0;
-  toast(
-    state.campaign
-      ? "Stage " +
-          (state.campaign.id + 1) +
-          " · " +
-          STAGES[state.campaign.id].name
-      : state.mode === "classic"
+  $("toast").classList.remove("visible");
+  if (!state.campaign)
+    toast(
+      state.mode === "classic"
         ? "Flat and dry. Build your own lakes before water arrives."
         : "Practice lake ready. Pieces wait for Drop.",
-  );
+    );
 }
 $("start").onclick = () => {
   if (dialogKind === "stages") newGame();
-  else if (dialogKind === "stage-complete") {
-    selectedStage = Math.min(11, state.campaign.id + 1);
-    showDialog("stages");
-  } else if (dialogKind === "over" && state.campaign) {
+  else if (dialogKind === "over" && state.campaign) {
     selectedMode = "campaign";
     selectedStage = state.campaign.id;
     newGame();
@@ -795,21 +1004,18 @@ $("start").onclick = () => {
   else if (dialogKind === "start" && saved && !saved.over) {
     state = saved;
     resume();
-    toast("Welcome back to your landscape.");
+    if (!state.campaign) toast("Welcome back to your landscape.");
   } else newGame();
 };
 $("secondary").onclick = () => {
-  if (dialogKind === "stage-complete") {
-    selectedMode = "campaign";
-    selectedStage = state.campaign.id;
-    newGame();
-  } else if (dialogKind === "stages") {
-    if (state.campaign?.status === "complete") showDialog("stage-complete");
+  if (dialogKind === "stages") {
+    if (state.campaign?.status === "complete") showKept();
     else if (state.over) showDialog("over");
     else if (started) resume();
     else showDialog("start");
   } else if (dialogKind === "new") {
-    if (state.over) showDialog("over");
+    if (state.campaign?.status === "complete") showKept();
+    else if (state.over) showDialog("over");
     else if (started) resume();
     else showDialog("start");
   } else showDialog("new");
@@ -873,7 +1079,7 @@ let uiTime = 0;
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
-  if (!paused) animation += dt;
+  if (!paused || inlineComplete()) animation += dt;
   if (nudgeHold && now >= nudgeHold.next) {
     nudge(nudgeHold.dx, nudgeHold.dy);
     nudgeHold.next = now + 100;
@@ -892,7 +1098,7 @@ function frame(now) {
     }
     if (state.campaign?.status === "complete") {
       save();
-      showDialog("stage-complete");
+      showKept();
       tone("recovery");
     } else if (state.over) {
       save();
@@ -912,13 +1118,8 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 resize();
-showDialog(
-  state.campaign?.status === "complete"
-    ? "stage-complete"
-    : state.campaign?.status === "failed"
-      ? "over"
-      : "start",
-);
+if (state.campaign?.status === "complete") showKept();
+else showDialog(state.campaign?.status === "failed" ? "over" : "start");
 requestAnimationFrame(frame);
 if (import.meta.env.DEV)
   window.__rainkeep = {
