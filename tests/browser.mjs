@@ -169,6 +169,9 @@ try {
       (await page.locator("#piece-desc").innerText()).includes("Water"),
     );
     await drop(page, 15, 15);
+    await page.waitForFunction(() =>
+      document.querySelector("#placement-text").textContent.includes("Evaporates"),
+    );
     ok(
       "Fire identifies its actual connected lake",
       (await page.locator("#placement-text").innerText()).includes(
@@ -574,6 +577,10 @@ try {
     last: results.at(-1),
     errors,
     failure: String(error),
+    savedState:
+      active && !active.isClosed()
+        ? await state(active).catch(() => null)
+        : null,
   };
   await writeFile(
     output + (production ? "/production.json" : "/development.json"),
