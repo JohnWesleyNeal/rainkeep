@@ -63,8 +63,8 @@ test("new water queue generates all three readable sizes", () => {
   const s = createGame("classic", 42),
     sizes = new Set();
   for (let i = 0; i < 200; i++) {
-    const p = piece(s, 12);
-    sizes.add(p.waterSize);
+    const p = piece(s, i + 20);
+    if (p.type === "rain") sizes.add(p.waterSize);
   }
   assert.deepEqual([...sizes].sort(), [0, 1, 2]);
 });

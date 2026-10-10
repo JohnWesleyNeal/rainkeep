@@ -21,6 +21,8 @@ import { drawWaterBubble } from "./bubble-canvas.js";
 import { addIslandBody, solidFootprint } from "./diorama.js";
 import { createWeatherVisual, drawCanvasWeather } from "./weather-visual.js";
 import { weatherView } from "./weather.js";
+import { createLandingGhost, ghostColors } from "./landing-ghost.js";
+import { previewSurface } from "./placement-preview.js";
 
 const HALF = SIZE / 2;
 const palette = {
@@ -65,11 +67,12 @@ export function createWorldRenderer(canvas, reduced = false) {
   }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.65));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.92;
   renderer.setClearColor(0x153747, 0);
   const scene = new THREE.Scene();
+  const landingGhost = createLandingGhost(scene);
   const camera = new THREE.OrthographicCamera(-27, 27, 22, -22, 0.1, 180);
   const hemi = new THREE.HemisphereLight(0xc4efff, 0x435b46, 1.15);
   scene.add(hemi);
@@ -134,7 +137,12 @@ export function createWorldRenderer(canvas, reduced = false) {
   const target = new THREE.Vector3(0, 1.1, 0);
   function positionCamera() {
     const angle = Math.PI / 4 - (quarter * Math.PI) / 2;
-    camera.position.set(Math.cos(angle) * 59.4, 38, Math.sin(angle) * 59.4);
+    const pitch = width < 650 && height > 240 ? 50 : 42;
+    camera.position.set(
+      Math.cos(angle) * 59.4,
+      1.1 + Math.tan((pitch * Math.PI) / 180) * 59.4,
+      Math.sin(angle) * 59.4,
+    );
     camera.lookAt(target);
     camera.updateMatrixWorld();
   }
@@ -199,6 +207,9 @@ export function createWorldRenderer(canvas, reduced = false) {
       "#include <color_fragment>",
       `#include <color_fragment>
       vec3 faceNormal=normalize(cross(dFdx(vGroundPosition),dFdy(vGroundPosition)));
+      // Broad, quiet color variation keeps the ground tactile without hiding seams.
+      float meadow=sin(vGroundPosition.x*.23+cos(vGroundPosition.z*.2))*.5+sin(vGroundPosition.z*.31+vGroundPosition.x*.11)*.5;
+      diffuseColor.rgb*=.98+meadow*.035;
       float slope=1.-smoothstep(.63,.93,abs(faceNormal.y));
       float strata=1.-smoothstep(.035,.095,abs(fract(max(0.,vGroundPosition.y)/1.4)-.5));
       vec3 earth=mix(vec3(.33,.22,.12),vec3(.53,.39,.22),smoothstep(0.,6.,vGroundPosition.y));
@@ -207,7 +218,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       vec4 shore=texture2D(shoreTexture,clamp((vGroundPosition.xz+vec2(16.))/32.,vec2(.001),vec2(.999)));
       float under=(1.-smoothstep(shore.r-.08,shore.r+.04,vGroundPosition.y))*shore.g;
       diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.10,.26,.25),under*slope*.48);
-      float thickness=max(.075,fwidth(vGroundPosition.y)*1.25);
+      float thickness=max(.105,fwidth(vGroundPosition.y)*1.25);
       float waterline=1.-smoothstep(thickness*.3,thickness*1.4,abs(vGroundPosition.y-shore.r-.12));
       vec3 lineColor=mix(vec3(.60,.92,.87),vec3(1.,.42,.06),smoothstep(.25,.65,shore.b));
       diffuseColor.rgb=mix(diffuseColor.rgb,lineColor,waterline*shore.g*slope*.92);
@@ -239,6 +250,10 @@ export function createWorldRenderer(canvas, reduced = false) {
   cliff.receiveShadow = true;
   scene.add(cliff);
   const island = addIslandBody(scene);
+  for (const body of [island.body, island.roots]) {
+    body.scale.y = 0.68;
+    body.position.y = -0.39;
+  }
   const holePixels = new Uint8Array(SIZE * SIZE);
   const holeMask = new THREE.DataTexture(
     holePixels,
@@ -1117,12 +1132,13 @@ export function createWorldRenderer(canvas, reduced = false) {
     width = r.width;
     height = r.height;
     renderer.setSize(width, height, false);
-    const span = Math.max(51, (38 * width) / height);
+    const span = Math.max(49, (37 * width) / height);
     camera.left = -span / 2;
     camera.right = span / 2;
     camera.top = (span * height) / width / 2;
     camera.bottom = -camera.top;
     camera.updateProjectionMatrix();
+    positionCamera();
     return width / span / Math.sqrt(2);
   }
   function render(s, aim, time, dt, options) {
@@ -1140,6 +1156,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       dirty = false;
     }
     updatePiece(s.current);
+    landingGhost.update(s, options.placement, options.showPiece && !s.over);
     if (s.turn !== lastPieceTurn) {
       lastPieceTurn = s.turn;
       arrivedAt = time;
@@ -1170,7 +1187,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       : null;
     if (!options.paused) turnAngle *= Math.exp(-dt * 24);
     piece.rotation.y = turnAngle;
-    shadow.visible = piece.visible;
+    shadow.visible = piece.visible && !options.placement;
     workshop.animate(
       piece,
       time,
@@ -1432,6 +1449,17 @@ export function createWorldRenderer(canvas, reduced = false) {
     pick,
     impact,
     preview: drawPreview,
+    get dragBasis() {
+      const origin = new THREE.Vector3(0, 0, 0).project(camera);
+      const x = new THREE.Vector3(1, 0, 0).project(camera);
+      const y = new THREE.Vector3(0, 0, 1).project(camera);
+      return [
+        ((x.x - origin.x) * width) / 2,
+        (-(x.y - origin.y) * height) / 2,
+        ((y.x - origin.x) * width) / 2,
+        (-(y.y - origin.y) * height) / 2,
+      ];
+    },
     get pieceScreen() {
       return tokenScreen;
     },
@@ -1453,6 +1481,7 @@ export function createWorldRenderer(canvas, reduced = false) {
       });
       return {
         ...weatherVisual.stats,
+        previewCells: landingGhost.cells,
         ...feedback.stats,
         leakPaths: tracedLeaks.length,
         foamBeads: leakFoam.count,
@@ -1515,6 +1544,7 @@ function createCanvasRenderer(canvas, reduced = false) {
     height,
     unit,
     quarter = 0,
+    slope = 0.7,
     tokenScreen = null;
   const rotate = (x, y) => {
     for (let n = 0; n < quarter; n++) [x, y] = [y, SIZE - x];
@@ -1524,7 +1554,9 @@ function createCanvasRenderer(canvas, reduced = false) {
     [x, y] = rotate(x, y);
     return [
       width / 2 + (x - y) * unit,
-      height * 0.36 + (x + y - SIZE) * unit * 0.5 - z * unit * 0.866,
+      height * 0.56 +
+        (x + y - SIZE) * unit * slope -
+        z * unit * Math.sqrt(1 - slope * slope),
     ];
   };
   function polygon(points, color) {
@@ -1538,7 +1570,11 @@ function createCanvasRenderer(canvas, reduced = false) {
     const r = canvas.getBoundingClientRect();
     width = r.width;
     height = r.height;
-    unit = Math.min(width / 70, height / 50);
+    slope =
+      width < 650 && height > 240
+        ? Math.sin((50 * Math.PI) / 180)
+        : Math.sin((42 * Math.PI) / 180);
+    unit = Math.min(width / 67, height / 49);
     canvas.width = width * devicePixelRatio;
     canvas.height = height * devicePixelRatio;
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
@@ -1787,18 +1823,39 @@ function createCanvasRenderer(canvas, reduced = false) {
         y: p[1],
         radius: Math.max(20, (w + h) * unit * 0.5),
       };
-      ctx.globalAlpha = 0.24;
-      for (const [dx, dy] of cells(s.current))
-        polygon(
-          [
-            project(aim.x + dx, aim.y + dy, 0.1),
-            project(aim.x + dx + 1, aim.y + dy, 0.1),
-            project(aim.x + dx + 1, aim.y + dy + 1, 0.1),
-            project(aim.x + dx, aim.y + dy + 1, 0.1),
-          ],
-          "#143f41",
-        );
-      ctx.globalAlpha = 1;
+      if (o.placement) {
+        const preview = o.placement,
+          selected = new Set(preview.indices);
+        for (const i of selected) {
+          const x = i % SIZE,
+            y = Math.floor(i / SIZE),
+            z = previewSurface(s, preview, i);
+          const corners = [
+            project(x, y, z),
+            project(x + 1, y, z),
+            project(x + 1, y + 1, z),
+            project(x, y + 1, z),
+          ];
+          ctx.globalAlpha = 0.32;
+          polygon(corners, ghostColors[preview.kind]);
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = ghostColors[preview.kind];
+          ctx.lineWidth = 1.5;
+          const neighbors = [
+            i - SIZE,
+            x === SIZE - 1 ? -1 : i + 1,
+            i + SIZE,
+            x === 0 ? -1 : i - 1,
+          ];
+          for (let n = 0; n < 4; n++)
+            if (!selected.has(neighbors[n])) {
+              ctx.beginPath();
+              ctx.moveTo(...corners[n]);
+              ctx.lineTo(...corners[(n + 1) % 4]);
+              ctx.stroke();
+            }
+        }
+      }
       if (["raise", "lower"].includes(s.current.type)) {
         for (const [dx, dy] of cells(s.current))
           polygon(
@@ -1828,7 +1885,7 @@ function createCanvasRenderer(canvas, reduced = false) {
   function pick(clientX, clientY, p) {
     const r = canvas.getBoundingClientRect(),
       a = (clientX - r.left - width / 2) / unit,
-      b = (clientY - r.top - height * 0.36) / (0.5 * unit) + SIZE;
+      b = (clientY - r.top - height * 0.56) / (slope * unit) + SIZE;
     let x = (a + b) / 2,
       y = (b - a) / 2;
     for (let n = 0; n < quarter; n++) [x, y] = [SIZE - y, x];
@@ -1840,6 +1897,12 @@ function createCanvasRenderer(canvas, reduced = false) {
   }
   return {
     kind: "canvas",
+    get dragBasis() {
+      const a = project(16, 16),
+        x = project(17, 16),
+        y = project(16, 17);
+      return [x[0] - a[0], x[1] - a[1], y[0] - a[0], y[1] - a[1]];
+    },
     get pieceScreen() {
       return tokenScreen;
     },

@@ -1,4 +1,5 @@
 import { createWeather, stepWeather, validWeather } from "./weather.js";
+import { drawQueuedPiece } from "./piece-queue.js";
 // Two terrain samples per old tile allow half-tile offsets and thin overlapping banks.
 export const SIZE = 32;
 export const LIMIT = 640;
@@ -105,6 +106,7 @@ export function random(s) {
 export function piece(s, turn) {
   if (s.campaign?.queue?.length)
     return { ...s.campaign.queue[turn % s.campaign.queue.length] };
+  if (s.rulesVersion === 2) return drawQueuedPiece(s, turn);
   const opening = [5, 6, 5, 7, 5, 6, 5, 7, 5, 6, 5, 7];
   let type;
   if (turn < opening.length) type = "raise";
@@ -210,9 +212,13 @@ export function cells(p) {
     minY = Math.min(...points.map((p) => p[1]));
   return points.map(([x, y]) => [x - minX, y - minY]);
 }
-export function createGame(mode = "classic", seed = Date.now() >>> 0) {
+export function createGame(
+  mode = "classic",
+  seed = Date.now() >>> 0,
+  rulesVersion = 2,
+) {
   const s = {
-    version: 3,
+    version: rulesVersion === 2 ? 4 : 3,
     mode,
     seed,
     terrain: Array(SIZE * SIZE).fill(0),
@@ -240,6 +246,14 @@ export function createGame(mode = "classic", seed = Date.now() >>> 0) {
     notice: "",
     noticeUntil: 0,
   };
+  if (rulesVersion === 2) {
+    s.rulesVersion = 2;
+    s.queueState = {
+      seed: (seed ^ 0x9e3779b9) >>> 0,
+      fireGap: 0,
+      previous: "",
+    };
+  }
   // The optional practice mode keeps a demonstration lake. Classic starts empty.
   if (mode === "daydream")
     for (let y = 8; y <= 23; y++)
@@ -250,6 +264,7 @@ export function createGame(mode = "classic", seed = Date.now() >>> 0) {
       }
   s.current = piece(s, 0);
   s.next = piece(s, 1);
+  if (rulesVersion === 2) s.upcoming = [s.next, piece(s, 2), piece(s, 3)];
   return s;
 }
 export function validPlacement(p, x, y) {
@@ -497,6 +512,7 @@ export function smartBomb(s) {
 export function applyPiece(s, x, y) {
   if (s.over || !validPlacement(s.current, x, y)) return null;
   const committedPiece = { ...s.current };
+  const previousSpill = s.spill;
   const contactHeight = landingHeight(s, { x, y });
   const type = s.current.type,
     coverage = footprint(s.current, x, y),
@@ -609,7 +625,11 @@ export function applyPiece(s, x, y) {
   s.score += earned;
   s.turn++;
   s.current = s.next;
-  s.next = piece(s, s.turn + 1);
+  if (s.rulesVersion === 2 && !s.campaign) {
+    s.upcoming.shift();
+    s.upcoming.push(piece(s, s.turn + 3));
+    s.next = s.upcoming[0];
+  } else s.next = piece(s, s.turn + 1);
   s.remaining = fallDuration(s);
   s.altitude = SPAWN_ALTITUDE;
   s.dropping = false;
@@ -631,6 +651,14 @@ export function applyPiece(s, x, y) {
     quake,
     earned,
     multiplier: bonus.multiplier,
+    drainRelief: Math.max(0, previousSpill - s.spill),
+    scoreParts: {
+      base: points,
+      level: s.level,
+      lakes: Math.max(1, bonus.lakes),
+      ducks: Math.max(1, bonus.ducks * 2),
+      rainbow: bonus.rainbow ? 10 : 1,
+    },
   };
 }
 // Recovery requires a real, liquid enclosure, rather than merely adding land.
@@ -752,7 +780,11 @@ function events(s, dt) {
       `Level ${level}. Faster falls${s.smartBombs ? " · Smart bomb ready" : ""}.`,
     );
   }
-  if (s.mode === "classic" && s.elapsed > 55 && s.turn >= 12) {
+  if (
+    s.mode === "classic" &&
+    s.elapsed > 55 &&
+    s.turn >= (s.rulesVersion === 2 ? 9 : 12)
+  ) {
     if (!s.weather) s.weather = createWeather("classic");
   }
   stepWeather(s, dt);
@@ -832,7 +864,7 @@ export function restore(raw) {
           p.waterSize <= 2));
     if (
       !s ||
-      ![1, 2, 3].includes(s.version) ||
+      ![1, 2, 3, 4].includes(s.version) ||
       !["classic", "daydream"].includes(s.mode) ||
       !Number.isInteger(s.seed) ||
       !finite(s.seed, 0, 4294967295) ||
@@ -876,7 +908,7 @@ export function restore(raw) {
     if (old) {
       if (s.aim && (!Number.isInteger(s.aim.x) || !Number.isInteger(s.aim.y)))
         return null;
-      const upgraded = createGame(s.mode, s.seed),
+      const upgraded = createGame(s.mode, s.seed, 1),
         expand = (array) =>
           Array.from(
             { length: SIZE * SIZE },
@@ -949,7 +981,28 @@ export function restore(raw) {
       )
     )
       return null;
-    s.version = 3;
+    if (s.version === 4) {
+      if (
+        s.rulesVersion !== 2 ||
+        s.campaign ||
+        !s.queueState ||
+        !Number.isInteger(s.queueState.seed) ||
+        !finite(s.queueState.seed, 0, 4294967295) ||
+        !Number.isInteger(s.queueState.fireGap) ||
+        !finite(s.queueState.fireGap, 0, 8) ||
+        !Object.hasOwn(TYPES, s.queueState.previous) ||
+        !Array.isArray(s.upcoming) ||
+        s.upcoming.length !== 3 ||
+        !s.upcoming.every(okPiece) ||
+        JSON.stringify(s.next) !== JSON.stringify(s.upcoming[0])
+      )
+        return null;
+    } else {
+      s.version = 3;
+      delete s.rulesVersion;
+      delete s.queueState;
+      delete s.upcoming;
+    }
     if (
       s.campaign !== undefined &&
       (!Number.isInteger(s.campaign.id) ||

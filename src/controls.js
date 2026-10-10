@@ -38,7 +38,7 @@ export function clampAim(aim, piece) {
 
 // A touch is a clutch: touching anywhere continues from the current aim.
 // Movement is measured in a fixed plane, never against moving water/terrain.
-export function beginDrag(point, aim, unit, quarter = 0) {
+export function beginDrag(point, aim, unit, quarter = 0, basis = null) {
   return {
     lastX: point.x,
     lastY: point.y,
@@ -47,6 +47,7 @@ export function beginDrag(point, aim, unit, quarter = 0) {
     aim: { ...aim },
     unit: Math.max(11, unit),
     quarter,
+    basis,
   };
 }
 export function rebaseDrag(drag, aim) {
@@ -68,10 +69,20 @@ export function moveDrag(drag, point, piece) {
     angle = (drag.quarter * Math.PI) / 2,
     c = Math.round(Math.cos(angle)),
     s = Math.round(Math.sin(angle));
+  let deltaX = c * a + s * b,
+    deltaY = -s * a + c * b;
+  if (drag.basis) {
+    const [xx, xy, yx, yy] = drag.basis;
+    const determinant = xx * yy - xy * yx;
+    if (Math.abs(determinant) > 1e-8) {
+      deltaX = (yy * dx - yx * dy) / determinant;
+      deltaY = (-xy * dx + xx * dy) / determinant;
+    }
+  }
   const continuous = clampAim(
     {
-      x: drag.x + c * a + s * b,
-      y: drag.y - s * a + c * b,
+      x: drag.x + deltaX,
+      y: drag.y + deltaY,
     },
     piece,
   );

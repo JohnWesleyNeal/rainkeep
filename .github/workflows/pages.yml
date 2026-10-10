@@ -22,6 +22,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser -- --production
+        env:
+          RAINKEEP_BROWSER_CHANNEL: chromium
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-checks
+          path: output/playwright/rework/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

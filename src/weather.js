@@ -3,6 +3,23 @@ export const WEATHER_CYCLE = 64;
 export const WEATHER_RAIN_START = 26;
 export const WEATHER_RAIN_END = 38;
 export const WEATHER_KINDS = ["meadow", "meadow-heavy", "classic"];
+export function canBringRain(s) {
+  return !!(
+    s.campaign?.id >= 12 &&
+    !s.campaign.falling &&
+    s.campaign.status === "playing" &&
+    !s.over &&
+    s.weather &&
+    ["prepare", "clearing", "sunshine"].includes(weatherView(s).phase)
+  );
+}
+export function bringRain(s) {
+  if (!canBringRain(s)) return false;
+  const cycle = Math.floor(s.weather.clock / WEATHER_CYCLE);
+  s.weather.clock =
+    cycle * WEATHER_CYCLE + (s.weather.clock % WEATHER_CYCLE < 18 ? 18 : 82);
+  return true;
+}
 export function createWeather(kind = "meadow", clock = 0) {
   return { kind, clock, drops: 0, rainClock: 0, showers: 0 };
 }

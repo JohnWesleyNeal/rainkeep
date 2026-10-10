@@ -1,27 +1,51 @@
 # Rainkeep
 
-A small browser landscape puzzle inspired by the water-and-terrain puzzle games of the 1990s. Original name, art, sound, and implementation; no original game assets.
+A cozy, skillful water-and-terrain puzzle for phones and desktop. Shape banks, catch water, and evaporate connected lakes for points and drain relief. Original name, artwork, sound, and implementation, inspired by the landscape puzzles of the 1990s.
 
-Build banks and enclose lakes, then evaporate connected water for points and drain relief. Water flows across a 32 × 32 terrain grid. Edges and bomb holes fill the drain; at 100%, the run ends.
+## Play your way
 
-- **Classic (default):** a flat, dry board and twelve opening Uppers let you build your own enclosures before Water arrives. Pieces visibly descend while you steer and rotate. Ten levels increase the speed every two minutes. Weather cycles begin after the opening, with preparation, gathering clouds, a shower and sunshine rather than continuous invisible rain.
-- **Daydream:** practice with a demonstration lake and pieces that wait for Drop. Water still flows and can overflow.
-- **Island journey:** seven Home Island field lessons introduce banks, separate lakes, ducks, punctures, ice, tower control and Fire scoring. Keeping all seven opens Meadow Isles directly, with four challenges combining terrain construction, timed showers, containment, repairs, ducks and falling pieces. The five earlier challenges remain optional Practice Coves, including mines and quake recovery. The illustrated journey map shows saved region completion and individual medals. Home's last lesson offers Set sail; Meadow's finish returns to the marked map. Stage identities and earlier medals are preserved; twelve-entry progress saves extend to sixteen entries.
-- **Field lessons:** notes in the existing piece card follow the actual landscape; a soft contour highlights the relevant area without aiming for you. **Watch rule** optionally loops a small demonstration inside the preview. Pause stops it; reduced motion shows a still example. Guides can be hidden from Pause and that preference saves. Meadow uses open objectives and the weather readout rather than tutorial targeting. Completion leaves the island visible with medals, Replay and a direct Next button. Stages retain fixed queues and drop budgets; efficient drops, a low drain and no new quake reward up to three medals. No result or tutorial dialog opens automatically.
-- **Weather:** a 64-second cycle gives 18 seconds of clear preparation, eight of gathering clouds, twelve of rain, ten of clearing skies and sixteen of sunshine. Rain visibly falls over the island, forms surface rings and adds real water. Meadow showers fall over the central landscape; Sunbreak uses a heavier shower and begins with eight seconds of cloud warning. A contained liquid lake must survive the shower's end before the Shower goal counts. Fire goals count subsequent contained evaporations. A missed shower can be tried again on the next cycle. Pause and tab hiding stop the weather clock; mid-shower saves retain its phase and counters. Low wind/rain ambience follows weather and respects sound, pause and mute. Completion parts the clouds and reveals a rainbow; physics waits for the player to continue.
-- **Placement:** continuously align pieces without snapping or an exact landing grid. Terrain edits integrate partial overlaps: a poorly aligned seam can leave a lower bank that leaks sooner. Long banks, corners, rings, and smaller shapes share this placement system. The fluid simulation still uses 32 × 32 samples beneath the continuous controls.
-- **Phone layout:** the game fits the visible screen in portrait and landscape, including browser-bar height changes and safe areas. The play surface blocks page scrolling and pinch zoom; Help scrolls and zooms independently. An earned Smart bomb appears beside Turn view. Hold a drag through viewport resizing without losing the grip.
-- **Touch:** slide anywhere on the board or its surrounding landscape to steer relatively. Lifting and re-touching preserves your aim, including fractional offsets. Rotation and the next piece arriving retain the target center, subject to the board boundary. Arrow buttons trim by 0.2 of a terrain sample; holding repeats. A second thumb can Rotate or Drop while the first keeps steering.
-- **Art and view:** a lit 3D floating island with an irregular rock underside, hanging roots, quiet sage ground, earth-colored bank slopes, and painted distant sky. Upper/Downer pieces use clean solid silhouettes. Bombs have metal shells, brass fittings, curved fuses, and sparks; fireballs have a round glowing core and asymmetric trailing flames. Water arrives in formations of transparent bubbles with visible fill levels and internal sloshing. Reflective water, modeled ducks, ice, mines, rainbow, falling leaks, and landing effects share the scene. Turns animate around the piece center; terrain grows after contact. Previews show the same models. A soft footprint follows ground and water while clipping out over holes. Turn view cycles through four camera angles; steering follows the visible board. The [art notes and generated-image prompts](ART.md) document the assets.
-- **Feedback and sound:** water wobbles and splashes; fire sheds embers and turns an evaporated lake into steam; bombs tumble and burst into debris and smoke. Landings have distinct original sounds, with repair notes and a scored-evaporation flourish. The music-note button enables sound and retains your preference. Muting and pausing cut active cues. Reduced-motion mode skips the additional movement and bursts.
-- **Water readability:** shallow water is turquoise, middle depths are cobalt and deep water is indigo. A waterline meets the actual bank slope, with darker submerged earth below it and dry bank above. The line turns amber near a low crest; local cascades show water crossing that bank before it reaches the island's drain mouths. These cues come from the existing liquid field, without changing flow, capacity or saves. Canvas retains simplified depth colors, waterlines and cascades.
-- **Living island:** an on-board earthquake gauge shows total terrain pressure and forecasts an Upper’s increase or a Downer’s relief, including partial placement, capped heights, and hole repairs. Tall isolated crowns gain a warm tint and a bounded extra pressure cost; long supported banks retain their normal volume cost. Water and ice add no pressure. The gauge changes from sage to amber to coral, with a warning sound and occasional falling dust/pebbles near the limit. Actual leak mouths have pale foam halos; moving foam follows wet surface gradients into them. Ducks bob in landing waves, scatter from explosions, and flap away through evaporation steam. Hole patches settle with dust. Larger evaporations produce longer steam, lake fades, bubbling, and rising sound, with an animated drain reduction.
-- **Drop:** accelerates the current piece to its landing point, with a short visible descent. The committed landing position locks until impact.
-- **Desktop:** point to steer, R to rotate, Space to drop faster; arrows move a fine step, Shift + arrows a larger step. Escape pauses/resumes.
-- Runs, personal bests per mode, and sound preference save on this browser. Leaving the tab pauses. Start Fresh requires a separate screen before replacing a run.
-- Offline service worker and home-screen manifest. No accounts, analytics, or remote saves.
+- **Island journey:** all sixteen islands are available immediately. First Pond is the recommended beginning; Home teaches the rules, Meadow adds showers, and Practice Coves offer advanced challenges. The suggested route and medals guide exploration without locks.
+- **Classic:** a dry board with falling pieces. Six opening Uppers introduce a long bank, corner, and ring, followed by two Water pieces and Fire. Later levels add ice and mines.
+- **Daydream:** a starter lake and pieces that wait for Drop. The opening is Water, Fire, Upper, Downer, Water, Fire. Water still flows and mistakes still matter.
+- **New free-play queues:** three actual upcoming pieces, independent piece/hazard randomness, no consecutive Bombs, and at most six consecutive non-Fire pieces after the scripted opening.
+- **Every drop is committed:** no undo or snapping. Restart from the result controls or choose a fresh landscape from Pause. Selecting a mode or island does not replace the active run until Play is pressed.
 
-## Develop
+## Read the island
+
+The phone layout gives priority to the goal, drain, land pressure, island, current piece, and upcoming queue. Short screens hide secondary score information during campaign play. Instructions remain 14 px and primary touch targets are at least 44 px.
+
+A bright landing ghost shows affected ground and projected terrain height. Fire highlights its connected lake and distinguishes evaporation, thawing, mine detonation, and dry ground. The caption explains immediate consequences and earthquake risk. Previews use the actual landing rules on an isolated state copy; they do not forecast future flowing water. Lake depth colors, physical waterlines, warm weak-bank warnings, and cascades reveal water behavior.
+
+First Pond shows actual build → fill → evaporate progress. Other islands show goal counters and their special constraints. Stages with a lower drain limit mark that threshold. Contextual notes are available throughout the journey; the optional rule demonstration appears where screen space allows. Help provides the complete field guide.
+
+Success and failure keep the island visible. Results explain the outcome, show medal requirements, and offer Replay/Retry, Next, and island browsing. Evaporation feedback includes the actual score, relevant multipliers, and actual drain reduction.
+
+## Controls
+
+- **Touch:** slide anywhere on the board to steer relatively. Lift and re-touch without losing the aim. A second thumb can Rotate or Drop. Fine adjust opens four small-step controls.
+- **Mouse:** point at the board to aim.
+- **Keyboard:** arrows move by 0.2 samples; Shift + arrows move by one sample. R rotates; Space drops; Escape pauses or resumes. Buttons also work through normal keyboard focus.
+- **View:** cycles four camera angles. Touch uses the renderer's camera transform, including the steeper portrait view. Resizing during a drag preserves the grip.
+
+## Rules
+
+**Upper** raises land or repairs an entire connected opening. **Downer** lowers covered land toward the lowest point it touches; it removes covered water without scoring and widens holes. Partial overlaps can leave weak seams.
+
+**Water** flows downhill across a 32 × 32 field. Its bubble formation and visible fill levels determine the released amount. Edges and holes fill the drain; a full drain ends the run. **Fire** evaporates a connected liquid lake for points and drain relief, thaws ice first, detonates an active mine, or flattens dry ground. **Bombs** punch holes; hitting an existing hole produces a bounded cascade.
+
+Separate lakes, deep-water ducks, level, and a rainbow multiply scores. Excess land and isolated tall peaks create earthquake pressure. Downers can reduce it. After a quake, rebuild damaged ground and hold a contained liquid lake for two seconds within 45 seconds to earn a recovery bonus. Five lakes at a Classic level-up earn a Smart bomb.
+
+Meadow weather normally cycles through clear preparation, eight seconds of gathering clouds, a twelve-second shower, clearing skies, and sunshine. Keep a contained liquid lake until the shower ends, then use Fire for post-shower goals. **Bring rain** skips dry waiting time in untimed Meadow stages while retaining the warning and complete shower. It cannot skip active rain, create a kept shower, advance hazards, or change the piece queue. Falling stages and Classic retain automatic weather.
+
+## Saves and compatibility
+
+Runs, medals, best scores, sound, and guide preferences save in this browser. No accounts, analytics, or remote saves. Leaving the tab pauses; graphics loss pauses and saves. The offline service worker and home-screen manifest support installed/offline play.
+
+Fresh free-play runs use version 4 saves with a persisted upcoming queue and its own generator state. Earlier runs continue with their original rules and one truthful upcoming piece. Version 1/2 terrain migration remains supported. Historical best scores stay in their existing key and are displayed in Pause alongside new-rule records. Campaign stage identities and all existing medals are preserved.
+
+WebGL renders the miniature island, terrain, water, ducks, weather and feedback. `?graphics=canvas` selects the simpler Canvas fallback. Reduced motion removes extra animation. All imagery and sound are local; procedural audio respects pause and mute. [Art notes](ART.md) and [validation history](VALIDATION.md) describe the implementation.
+
+## Develop and validate
 
 Node.js 24 recommended.
 
@@ -33,24 +57,13 @@ npm run build
 npm run preview
 ```
 
-## Publish
+The browser suite uses an isolated Chrome profile and starts its own Vite server on port 5175:
 
-The GitHub Actions workflow tests, builds, and publishes `dist` to GitHub Pages on pushes to `main`. Configure the repository's Pages source as GitHub Actions. Vite uses relative asset paths, so the project works beneath a repository URL.
+```sh
+npm run test:browser
+npm run test:browser -- --production
+```
 
-## Rules and strategy
+Build first for the production suite. If Chrome is unavailable, install Chromium with `npx playwright install chromium` and set `RAINKEEP_BROWSER_CHANNEL=chromium`. Screenshots and JSON reports are written to ignored `output/playwright/rework/`. Browser checks cover real controls, all island layouts, saves, fallback, graphics recovery, and production offline reload. Physical-phone frame rate, thumb comfort, and subjective audio/placement feel still require hands-on acceptance.
 
-- **Upper:** raises each sample, or repairs a whole connected puncture when it touches a hole. Land volume increases earthquake pressure. Above height 4.2, narrow crowns with low support along both axes add a bounded surcharge. Spreading a crown reduces this extra cost; overlapping a Downer with it and low ground reduces its height. Ordinary banks are useful, rather than penalized merely for having steep sides.
-- **Downer:** lowers covered land toward the lowest ground it touches, in proportion to coverage. Flat land stays flat. Covered water disappears without points or drain relief; partial coverage retains some water. Touching a hole expands it and removes all pierced land, including partially covered rim samples. That removed land loses its volume and peak pressure; openings do not count as negative land to offset distant towers. Forecasts include this relief. Continuing an older run clears any invisible land left inside holes by earlier fractional Downers.
-- **Water:** one-, three-, or five-bubble formations release different amounts of flowing water at their displayed locations. Visible fill levels determine how much each bubble releases; deeper lake water appears darker blue. Old saved Water pieces retain their original single-bubble amount. Closed banks hold it; gaps, edges, and holes leak. The small map shows current escape points in red and holes in dark ink.
-- **Fireball:** evaporates the connected lake it lands in, awards points, and lowers the drain. Dry fire flattens land without punching through the board. Fire thaws frozen lakes without evaporating them; a lake containing a mine detonates instead.
-- **Bomb:** punches a leaking hole regardless of terrain height. The opening cuts through the island with a broken warm rim, lit inner walls, and sky visible beneath; an Upper closes it again. Landing in an existing hole triggers three falling re-bombs. Active cascades are capped for playability.
-- **Bonuses:** separate lakes multiply scores, deep lakes gain ducks, and enough liquid water produces a ×10 rainbow. The visible combined multiplier also includes the level. Frozen water does not count toward ducks or rainbows.
-- **Events:** total terrain pressure triggers an earthquake; water and ice add no earthquake pressure. Quakes damage parts of the landscape while preserving others. Within the following 45 seconds, rebuild damaged ground and hold a contained liquid lake for two uninterrupted seconds to earn a one-time 500 × level recovery bonus. Containment checks whether water can reach a hole or board edge at its current surface height, including dry ground inside an enclosure. The opportunity and progress survive saves; Smart bomb clears it. In Classic, ice begins at level 2 and freezes a lake temporarily; catching it on dry land earns a bonus. Mines begin at level 4 and expire unless frozen. Five lakes at level-up earn a Smart bomb, which clears the board and drain while retaining the score. Stages use authored hazards and a fixed pace.
-
-The simulation uses conservative water flux and piece descent at 30 Hz. Rendering uses Three.js WebGL 2, a 1.65× pixel-ratio cap, shared/instanced geometry, and a compressed local sky image. Ground coloring is procedural to keep heights readable. Reduced-motion mode removes the turning and terrain-growth transitions and token flicker. A simpler Canvas 2D fallback retains the same continuous gameplay on devices without WebGL; `?graphics=canvas` selects it explicitly. Losing the graphics context pauses and saves a run. There are no remote fonts, external asset requests, or analytics.
-
-Runs preserve altitude, holes, frozen water, hazards, and mines. Original prototype saves expand geometrically to the finer simulation grid; edition 03 saves retain their existing arrays. Both migrate to version 3 while retaining score, aim, queue, water, and drain. New saves retain fractional aim. Continuing an older run retains its original board; choose a fresh Classic run to experience the dry opening.
-
-The [Wetrix N64 manual](https://nintendo64.pl/wp-content/uploads/Wetrix-EU-uncomplet.pdf), printed pages 9–11 and 18–23, informed the opening, terrain rules, fire/drain relationship, hazards, and multipliers. Continuous alignment is an adaptation; the original analog placement resolution and terrain-edit math have not been measured. The campaign and isolated-peak surcharge are Rainkeep additions. Piece proportions, scoring values, event timing, water physics, and quake damage are independently tuned. Pro/mystery pieces, handicap modes, camera zoom, and multiplayer are not implemented.
-
-Phone-sized browser checks verify layout and emulated touch; physical phone performance and subjective control feel require a hands-on check.
+GitHub Actions tests, builds, checks the compiled browser game, and publishes `dist` to GitHub Pages on pushes to `main`. Relative asset paths support repository subpaths.

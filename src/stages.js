@@ -255,7 +255,7 @@ function hole(s, x, y) {
 export function createStage(id) {
   if (!Number.isInteger(id) || !STAGES[id]) throw new Error("Unknown stage");
   const def = STAGES[id],
-    s = createGame("daydream", 1101 + id * 37);
+    s = createGame("daydream", 1101 + id * 37, 1);
   s.terrain.fill(0);
   s.water.fill(0);
   let aim = { x: 15, y: 15 };
@@ -497,9 +497,7 @@ export function readProgress(raw) {
   }
 }
 export function unlockedStages(progress) {
-  let n = 1;
-  while (n < STAGES.length && progress.stars[n - 1] > 0) n++;
-  return n;
+  return STAGES.length;
 }
 export function finishStage(progress, s) {
   const next = readProgress(progress);

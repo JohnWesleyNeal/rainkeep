@@ -26,17 +26,7 @@ export const regionFor = (id) =>
 export const regionKept = (progress, region) =>
   region.stages.every((i) => progress.stars[i] > 0);
 export function stageUnlocked(progress, id) {
-  if (!Number.isInteger(id) || id < 0 || id > 15) return false;
-  if (progress.stars[id] > 0) return true;
-  if (id < 7) return id === 0 || progress.stars[id - 1] > 0;
-  if (id >= 12)
-    return (
-      regionKept(progress, REGIONS[0]) &&
-      (id === 12 || progress.stars[id - 1] > 0)
-    );
-  return (
-    regionKept(progress, REGIONS[0]) && (id === 7 || progress.stars[id - 1] > 0)
-  );
+  return Number.isInteger(id) && id >= 0 && id < 16;
 }
 export function nextIsland(id) {
   if (id === 6) return 12;

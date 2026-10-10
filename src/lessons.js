@@ -255,6 +255,43 @@ export function lessonFor(s, b = bonuses(s)) {
             : !enough(c.clears ? 60 : 100)
               ? fill()
               : clear();
+    case 12:
+    case 13:
+    case 14:
+    case 15:
+      if (s.holes.some(Boolean)) return patch();
+      if (c.id === 15 && terrainPressure(s).surcharge > 0.01) return level();
+      if (
+        c.id === 12 &&
+        Array.from(
+          { length: 20 },
+          (_, n) => (6 + Math.floor(n / 10)) * 32 + 11 + (n % 10),
+        ).some((i) => s.terrain[i] < 0.7)
+      )
+        return note(
+          "bank-weather",
+          "Overlap both ends of the gap.",
+          "A continuous bank catches the shower.",
+          target(16, 7, 4),
+          "raise",
+        );
+      if (!c.keptShowers)
+        return note(
+          "weather",
+          "Keep a lake inside its banks until rain ends.",
+          "Fire goals count after you keep a shower. Bring rain skips clear waiting time.",
+          null,
+        );
+      if (c.id === 13)
+        return separated(
+          [
+            [3, 10, 10],
+            [19, 10, 10],
+          ],
+          2,
+        );
+      if (c.id === 15 && !c.peakDucks) return fill(pond, true);
+      return !enough(12) ? fill() : clear(wetFocus());
     default:
       return null;
   }

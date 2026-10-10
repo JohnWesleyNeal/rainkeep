@@ -122,19 +122,19 @@ test("Sunbreak can be completed while its pieces naturally fall", () => {
   );
 });
 
-test("old medals migrate and Meadow branches directly from the seven lessons", () => {
+test("old medals migrate and all islands are open while the suggested route persists", () => {
   const old = { stars: Array(12).fill(0) };
   old.stars[0] = 3;
   old.stars[6] = 2;
   const migrated = readProgress(old);
   assert.equal(migrated.stars.length, 16);
   assert.deepEqual(migrated.stars.slice(0, 12), old.stars);
-  assert.equal(stageUnlocked(migrated, 12), false);
+  assert.equal(stageUnlocked(migrated, 12), true);
   for (let i = 0; i < 7; i++) migrated.stars[i] = 2;
   assert.ok(regionKept(migrated, REGIONS[0]));
   assert.ok(stageUnlocked(migrated, 12));
   assert.ok(stageUnlocked(migrated, 7));
-  assert.equal(stageUnlocked(migrated, 13), false);
+  assert.equal(stageUnlocked(migrated, 13), true);
   assert.equal(suggestedIsland(migrated), 12);
   migrated.stars[12] = 1;
   assert.ok(stageUnlocked(migrated, 13));

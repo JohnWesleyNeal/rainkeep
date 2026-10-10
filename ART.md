@@ -1,5 +1,12 @@
 # Rainkeep art
 
+## Warm miniature redesign (2.0)
+
+The interface uses forest green, cream, sage and clay, with larger instructions and a compact action dock. Objective and risk information sits outside the interactive canvas. The portrait camera is steeper; steering uses the camera's ground projection rather than a fixed isometric ratio. The rock underside is shallower, ground has broad low-contrast color variation, and bank waterlines are slightly wider for phone readability. The existing local sky and original modeled pieces remain in use.
+
+A fixed-capacity translucent landing mesh and boundary outline show the actual affected terrain. Fire outlines its connected lake. Safe, water, caution and danger previews pair color with a symbol and written outcome. These predictions use a disposable copy of the simulation, never mutate the live game, and do not predict future fluid motion. Canvas uses the same analysis with simpler polygons. No new bitmap assets, external requests, or audio samples were introduced.
+
+
 Edition 15 adds the original illustrated island journey, with completed shores marked on the map. Meadow uses a warmer light and greener ground while preserving raised-bank contrast and water depth colors. Weather changes the sky tint and sun intensity; six soft, layered cloud sprites gather behind the island. A small procedural cloud texture is drawn locally, without another downloaded image. Rain streaks and surface rings use two fixed geometry buffers, with 96 streaks and 20 rings at most. Reduced motion uses 28 static streaks and still rings. Canvas carries the same phases, simpler clouds, rain, rings and a completion rainbow. The island stays visible at completion, and a short, restrained transition accompanies setting sail. Optional wind/rain sound uses one filtered procedural-noise source, stopped by pause or mute.
 
 Edition 08 uses original real-time Three.js geometry for the terrain, irregular rock underside, hanging roots, banks, solid beveled pieces, ducks, mines, rainbow, and impact effects. Decorative edge grass, direction spikes, and flat chevrons have been removed. Quiet sage ground, lighter elevated tops, and earth-colored slopes with restrained strata make height changes readable without a bitmap ground texture.

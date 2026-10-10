@@ -194,14 +194,14 @@ test("last allowed drop can complete a stage; unmet goals fail and preserve retr
   assert.ok(failed.over);
   assert.equal(restore(JSON.stringify(failed)).campaign.status, "failed");
 });
-test("unlocks are sequential, best medals persist, and malformed progress resets safely", () => {
+test("all stages are available, best medals persist, and malformed progress resets safely", () => {
   let progress = readProgress(null);
-  assert.equal(unlockedStages(progress), 1);
+  assert.equal(unlockedStages(progress), STAGES.length);
   const s = createStage(0);
   s.campaign.status = "complete";
   s.turn = 3;
   progress = finishStage(progress, s);
-  assert.equal(unlockedStages(progress), 2);
+  assert.equal(unlockedStages(progress), STAGES.length);
   assert.equal(progress.stars[0], 3);
   s.turn = 10;
   assert.equal(finishStage(progress, s).stars[0], 3);

@@ -47,8 +47,8 @@ test("Classic starts flat and dry; practice has a demonstration lake", () => {
   assert.equal(s.current.type, "raise");
   assert.ok(waterTotal(createGame("daydream")) > 0);
 });
-test("opening gives time to build enclosures before water, then introduces downers, fire and bombs", () => {
-  const s = createGame("classic", 42);
+test("legacy opening gives time to build enclosures before water, then introduces downers, fire and bombs", () => {
+  const s = createGame("classic", 42, 1);
   assert.ok(
     Array.from({ length: 12 }, (_, i) => piece(s, i)).every(
       (p) => p.type === "raise",
@@ -301,6 +301,7 @@ test("Classic falls naturally while practice suspends; Drop changes terrain only
   tick(b, 1);
   assert.ok(a.altitude < SPAWN_ALTITUDE);
   assert.equal(b.altitude, SPAWN_ALTITUDE);
+  use(b, "raise");
   const before = [...b.terrain];
   accelerateDrop(b);
   tick(b, 1 / 30);
