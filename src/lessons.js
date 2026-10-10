@@ -16,6 +16,10 @@ export const TAKEAWAYS = [
   "After a quake, rebuild and contain liquid water to earn recovery.",
   "Keep falling Water in separate basins to preserve lake bonuses.",
   "Repair, control peaks, build depth, then clear and refill your lakes.",
+  "You kept a lake through the shower and cleared it in the sunshine.",
+  "Two separate lakes weathered the rain together.",
+  "You repaired the hollow, caught the rain and kept the drain under control.",
+  "Meadow Isles kept. Your ducks and lakes made it through the heavy shower.",
 ];
 const target = (x, y, radius = 3) => ({ x, y, radius });
 const pond = target(16, 16, 4);

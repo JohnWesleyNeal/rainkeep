@@ -288,6 +288,10 @@ test("later Classic levels spawn visible ice and mine hazards; ambient rain star
   a.elapsed = 56;
   a.turn = 12;
   tick(a, 0.25);
+  assert.equal(waterTotal(a) + a.spill, 0);
+  assert.ok(a.weather && a.weather.clock < 26);
+  a.weather.clock = 26;
+  tick(a, 0.25);
   assert.ok(waterTotal(a) + a.spill > 0);
 });
 test("Classic falls naturally while practice suspends; Drop changes terrain only on contact", () => {

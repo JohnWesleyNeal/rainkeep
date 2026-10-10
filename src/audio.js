@@ -145,6 +145,10 @@ export function scheduleCue(
     [880, 1320, 1760].forEach((f, i) =>
       note(f, f * 0.97, 0.3, 0.05, i * 0.035),
     );
+  } else if (type === "weather") {
+    air(430, 850, 0.9, 0.045);
+    note(294, 294, 0.5, 0.018);
+    note(440, 440, 0.5, 0.018, 0.15);
   } else if (type === "drop") {
     air(2400, 700, 0.16, 0.08);
   } else {
@@ -170,10 +174,20 @@ export function createSoundBank(enabled = false) {
     master,
     compressor,
     lastCue = "",
-    active = [];
+    active = [],
+    ambience = null;
+  function stopAmbience() {
+    if (!ambience) return;
+    ambience.source.stop();
+    ambience.source.disconnect();
+    ambience.filter.disconnect();
+    ambience.gain.disconnect();
+    ambience = null;
+  }
   function stop() {
     for (const cue of active) cue.stop();
     active = [];
+    stopAmbience();
   }
   function unlock() {
     if (!enabled) return;
@@ -210,6 +224,37 @@ export function createSoundBank(enabled = false) {
     unlock,
     play,
     stop,
+    ambient(amount) {
+      if (
+        !enabled ||
+        !context ||
+        context.state !== "running" ||
+        amount <= 0.001
+      ) {
+        stopAmbience();
+        return;
+      }
+      if (!ambience) {
+        const source = context.createBufferSource(),
+          filter = context.createBiquadFilter(),
+          gain = context.createGain();
+        source.buffer = noise(context);
+        source.loop = true;
+        filter.type = "lowpass";
+        filter.frequency.value = 1800;
+        gain.gain.value = 0;
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(master);
+        source.start();
+        ambience = { source, filter, gain };
+      }
+      ambience.gain.gain.setTargetAtTime(
+        Math.min(1, amount) * 0.085,
+        context.currentTime,
+        0.25,
+      );
+    },
     setEnabled(value) {
       enabled = value;
       if (!enabled) stop();
@@ -221,6 +266,7 @@ export function createSoundBank(enabled = false) {
         lastCue,
         activeCues: active.filter((c) => c.until > (context?.currentTime || 0))
           .length,
+        activeAmbience: ambience ? 1 : 0,
       };
     },
   };

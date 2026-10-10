@@ -1,3 +1,4 @@
+import { createWeather, stepWeather, validWeather } from "./weather.js";
 // Two terrain samples per old tile allow half-tile offsets and thin overlapping banks.
 export const SIZE = 32;
 export const LIMIT = 640;
@@ -752,13 +753,9 @@ function events(s, dt) {
     );
   }
   if (s.mode === "classic" && s.elapsed > 55 && s.turn >= 12) {
-    s.rainClock += dt;
-    while (s.rainClock >= 0.24) {
-      s.rainClock -= 0.24;
-      const i = Math.floor(random(s) * s.water.length);
-      s.water[i] += 0.12 + s.level * 0.025;
-    }
+    if (!s.weather) s.weather = createWeather("classic");
   }
+  stepWeather(s, dt);
   if (s.mode === "classic" && s.level >= 2) {
     s.iceClock += dt;
     if (s.iceClock > 24) {
@@ -956,7 +953,7 @@ export function restore(raw) {
     if (
       s.campaign !== undefined &&
       (!Number.isInteger(s.campaign.id) ||
-        !finite(s.campaign.id, 0, 11) ||
+        !finite(s.campaign.id, 0, 15) ||
         !["playing", "complete", "failed"].includes(s.campaign.status) ||
         !Array.isArray(s.campaign.queue) ||
         !s.campaign.queue.length ||
@@ -980,6 +977,22 @@ export function restore(raw) {
         ].every((k) => finite(s.campaign[k], 0, 1e10)))
     )
       return null;
+    if (s.weather !== undefined && !validWeather(s.weather)) return null;
+    if (
+      s.campaign?.id >= 12 &&
+      (!s.weather || !["meadow", "meadow-heavy"].includes(s.weather.kind))
+    )
+      return null;
+    if (s.campaign) {
+      for (const key of ["weatherClears", "keptShowers", "seenShowers"]) {
+        if (s.campaign[key] === undefined) s.campaign[key] = 0;
+        if (
+          !Number.isInteger(s.campaign[key]) ||
+          !finite(s.campaign[key], 0, 1e8)
+        )
+          return null;
+      }
+    }
     if (s.recovery === undefined) s.recovery = null;
     if (
       s.recovery !== null &&

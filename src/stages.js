@@ -6,6 +6,7 @@ import {
   terrainPressure,
   LIMIT,
 } from "./simulation.js";
+import { createWeather } from "./weather.js";
 
 const upper = (shape = 5) => ({ type: "raise", shape, rotation: 0 });
 const lower = () => ({ type: "lower", shape: 2, rotation: 0 });
@@ -161,6 +162,73 @@ export const STAGES = [
     falling: true,
     noQuake: true,
   },
+  {
+    name: "First Shower",
+    goal: "Catch a shower, then evaporate 40 contained water.",
+    hint: "Finish this bank or build your own lake beneath the clouds. Save Fire for after the shower.",
+    queue: [upper(), water(), upper(7), fire(), upper(), water(), fire()],
+    budget: 24,
+    par: 7,
+    evaporated: 40,
+    weatherClears: 1,
+    showers: 1,
+  },
+  {
+    name: "Meadow Mosaic",
+    goal: "After the shower, hold two separate contained lakes for 2 seconds.",
+    hint: "Complete these low banks or shape two lakes of your own. Keep a dry divide between them.",
+    queue: [upper(1), upper(1), water(0), water(0), upper(7), water(), fire()],
+    budget: 28,
+    par: 8,
+    holdLakes: 2,
+    showers: 1,
+  },
+  {
+    name: "Leaky Hollow",
+    goal: "Repair the opening and clear 60 water after rain. Keep the drain below 45%.",
+    hint: "Patch the hollow, reinforce its low rim, then catch and clear the shower. Other enclosures count too.",
+    queue: [
+      upper(2),
+      upper(),
+      water(2),
+      lower(),
+      fire(),
+      upper(),
+      water(),
+      fire(),
+    ],
+    budget: 28,
+    par: 8,
+    repairs: 1,
+    evaporated: 60,
+    weatherClears: 1,
+    showers: 1,
+    maxDrain: 0.45,
+  },
+  {
+    name: "Sunbreak",
+    goal: "Earn a duck and evaporate twice after the heavy shower, without a quake.",
+    hint: "Pieces fall here. Feed several lakes or refill a deep pond, and keep peaks under control.",
+    queue: [
+      upper(2),
+      lower(),
+      water(2),
+      water(),
+      upper(),
+      fire(),
+      water(),
+      fire(),
+      water(0),
+      fire(),
+    ],
+    budget: 36,
+    par: 20,
+    ducks: 1,
+    weatherClears: 2,
+    showers: 1,
+    noQuake: true,
+    falling: true,
+  },
 ];
 
 function pond(s, x, y, size, height = 2.8, depth = 0, wall = 2) {
@@ -240,13 +308,43 @@ export function createStage(id) {
     pond(s, 20, 2, 10, 2.8, 0.3);
     pond(s, 11, 20, 10, 2.8, 0.3);
     aim = { x: 5, y: 5 };
-  } else {
+  } else if (id === 11) {
     pond(s, 10, 10, 12, 3.8, 0.6);
     hole(s, 14, 14);
     for (let y = 4; y < 6; y++)
       for (let x = 4; x < 6; x++) s.terrain[y * 32 + x] = 7;
     aim = { x: 13, y: 13 };
+  } else if (id === 12) {
+    pond(s, 6, 6, 20);
+    for (let y = 6; y < 8; y++)
+      for (let x = 11; x < 21; x++) s.terrain[y * 32 + x] = 0;
+    aim = { x: 11, y: 6 };
+  } else if (id === 13) {
+    for (const x of [3, 19]) {
+      pond(s, x, 10, 10);
+      for (let y = 10; y < 12; y++)
+        for (let cx = x + 2; cx < x + 8; cx++) s.terrain[y * 32 + cx] = 0;
+    }
+    aim = { x: 5, y: 10 };
+  } else if (id === 14) {
+    pond(s, 8, 8, 16, 3.8);
+    hole(s, 13, 13);
+    for (let y = 8; y < 10; y++)
+      for (let x = 12; x < 18; x++) s.terrain[y * 32 + x] = 0.7;
+    aim = { x: 12, y: 12 };
+  } else if (id === 15) {
+    pond(s, 10, 10, 12, 3.8);
+    pond(s, 2, 18, 10, 2.8);
+    hole(s, 14, 14);
+    for (let y = 4; y < 6; y++)
+      for (let x = 4; x < 6; x++) s.terrain[y * 32 + x] = 7;
+    aim = { x: 13, y: 13 };
   }
+  if (id >= 12)
+    s.weather = createWeather(
+      id === 15 ? "meadow-heavy" : "meadow",
+      id === 15 ? 18 : 0,
+    );
   s.campaign = {
     id,
     status: "playing",
@@ -264,6 +362,9 @@ export function createStage(id) {
     peakDucks: 0,
     worstDrain: 0,
     startingQuakes: s.quakes,
+    weatherClears: 0,
+    keptShowers: 0,
+    seenShowers: 0,
   };
   s.current = piece(s, 0);
   s.next = piece(s, 1);
@@ -285,6 +386,8 @@ export function stageProgress(s) {
     add("Blunt towers", terrainPressure(s).surcharge <= 0.01 ? 1 : 0, 1);
   if (d.ducks) add("Duck", c.peakDucks, d.ducks);
   if (d.clears) add("Clear lakes", c.clears, d.clears);
+  if (d.showers) add("Shower", c.keptShowers, d.showers);
+  if (d.weatherClears) add("Fire", c.weatherClears, d.weatherClears);
   if (d.evaporated) add("Evaporate", Math.floor(c.evaporated), d.evaporated);
   if (d.holdLakes)
     add("Hold " + d.holdLakes + " lakes", Math.min(2, c.stable), 2);
@@ -312,6 +415,17 @@ export function stepStage(s, event, dt) {
   const c = s.campaign;
   if (!c || c.status !== "playing") return;
   const d = STAGES[c.id];
+  const b = bonuses(s);
+  if (s.weather && s.weather.showers > c.seenShowers) {
+    if (
+      b.groups.some(
+        (l) => l.volume >= 12 && !l.frozen && containedLake(s, l),
+      ) ||
+      (event?.contained && event.removed >= 12)
+    )
+      c.keptShowers++;
+    c.seenShowers = s.weather.showers;
+  }
   if (event) {
     c.repairs += event.repaired || 0;
     c.thaws += event.thawed ? 1 : 0;
@@ -319,13 +433,14 @@ export function stepStage(s, event, dt) {
     if (event.contained && event.removed > 0) {
       c.evaporated += event.removed;
       c.clears++;
+      if (c.keptShowers) c.weatherClears++;
     }
   }
-  const b = bonuses(s);
   c.peakDucks = Math.max(c.peakDucks, b.ducks);
   c.worstDrain = Math.max(c.worstDrain, s.spill / LIMIT);
   if (d.holdLakes)
     c.stable =
+      (!d.showers || c.keptShowers >= d.showers) &&
       b.groups.filter((l) => containedLake(s, l)).length >= d.holdLakes
         ? c.stable + dt
         : 0;
@@ -367,18 +482,23 @@ export function readProgress(raw) {
     if (
       !value ||
       !Array.isArray(value.stars) ||
-      value.stars.length !== 12 ||
+      ![12, STAGES.length].includes(value.stars.length) ||
       !value.stars.every((n) => Number.isInteger(n) && n >= 0 && n <= 3)
     )
-      return { stars: Array(12).fill(0) };
-    return { stars: [...value.stars] };
+      return { stars: Array(STAGES.length).fill(0) };
+    return {
+      stars: [
+        ...value.stars,
+        ...Array(STAGES.length - value.stars.length).fill(0),
+      ],
+    };
   } catch {
-    return { stars: Array(12).fill(0) };
+    return { stars: Array(STAGES.length).fill(0) };
   }
 }
 export function unlockedStages(progress) {
   let n = 1;
-  while (n < 12 && progress.stars[n - 1] > 0) n++;
+  while (n < STAGES.length && progress.stars[n - 1] > 0) n++;
   return n;
 }
 export function finishStage(progress, s) {

@@ -29,6 +29,16 @@ import { createSoundBank } from "./audio.js";
 import { createWorldRenderer } from "./renderer.js";
 import { LESSON_COUNT, lessonFor, TAKEAWAYS } from "./lessons.js";
 import { drawLessonDemo } from "./lesson-demo.js";
+import { weatherView } from "./weather.js";
+import {
+  REGIONS,
+  regionFor,
+  regionKept,
+  stageUnlocked,
+  nextIsland,
+  suggestedIsland,
+  islandArt,
+} from "./journey.js";
 import {
   STAGES,
   createStage,
@@ -36,7 +46,6 @@ import {
   stageProgress,
   stageStars,
   readProgress,
-  unlockedStages,
   finishStage,
 } from "./stages.js";
 
@@ -70,8 +79,7 @@ let saved = restore(read(SAVE)),
   paused = true,
   selectedMode = state.campaign ? "campaign" : state.mode;
 let campaignProgress = readProgress(read(CAMPAIGN)),
-  selectedStage =
-    state.campaign?.id ?? Math.min(11, unlockedStages(campaignProgress) - 1);
+  selectedStage = state.campaign?.id ?? suggestedIsland(campaignProgress);
 let cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 },
   unit = 20,
   animation = 0,
@@ -113,7 +121,8 @@ const world = createWorldRenderer(board, reduced);
 board.dataset.graphics = world.kind;
 let worldBonus = bonuses(state),
   lastNotice = "",
-  dangerBand = 0;
+  dangerBand = 0,
+  lastWeatherPhase = "fair";
 function toast(text) {
   $("toast").textContent = text;
   $("toast").classList.add("visible");
@@ -165,6 +174,24 @@ window.visualViewport?.addEventListener("resize", fitViewport);
 fitViewport();
 function render(dt) {
   const celebrating = inlineComplete();
+  const weather = weatherView(state);
+  if (
+    started &&
+    !paused &&
+    weather.phase === "gather" &&
+    lastWeatherPhase !== "gather"
+  )
+    tone("weather");
+  lastWeatherPhase = weather.phase;
+  const landscape = document.querySelector(".landscape");
+  landscape.dataset.region = state.campaign
+    ? regionFor(state.campaign.id).id
+    : state.mode;
+  landscape.dataset.weather = weather.phase;
+  landscape.style.setProperty("--cloud-cover", weather.cloud);
+  sounds.ambient(
+    started && !paused ? weather.rain * 0.65 + weather.cloud * 0.12 : 0,
+  );
   world.render(state, cursor, animation, dt, {
     paused: paused && !celebrating,
     showPiece: started && !state.over && state.campaign?.status !== "complete",
@@ -362,7 +389,7 @@ function ui() {
   $("mode-label").textContent = state.mode.toUpperCase();
   const campaign = state.campaign;
   const complete = campaign?.status === "complete";
-  const guide = campaign && guideEnabled;
+  const guide = campaign && guideEnabled && campaign.id < 12;
   $("piece-heading-label").textContent = complete
     ? "WHAT YOU LEARNED"
     : guide
@@ -376,7 +403,7 @@ function ui() {
     lastPiece = "";
   }
   activeLesson = nextLesson;
-  $("watch-rule").hidden = !guide || complete;
+  $("watch-rule").hidden = !activeLesson || complete;
   $("next-label").hidden = !!guide;
   $("watch-rule").textContent = watchingRule
     ? "Piece preview ↻"
@@ -395,21 +422,31 @@ function ui() {
     descriptionRule = activeLesson.rule;
   }
   if (complete) {
-    $("piece-name").textContent = "Pond kept";
+    $("piece-name").textContent =
+      campaign.id >= 12 ? "Island kept" : "Pond kept";
     description = TAKEAWAYS[campaign.id];
     descriptionRule = null;
     $("piece-symbol").textContent = "";
     $("next").textContent =
-      campaign.id === 11
-        ? "ALL TWELVE KEPT"
-        : "NEXT · " + STAGES[campaign.id + 1].name;
+      nextIsland(campaign.id) === null
+        ? campaign.id === 15
+          ? "MEADOW ISLES KEPT"
+          : "PRACTICE COVES KEPT"
+        : campaign.id === 6
+          ? "SET SAIL · MEADOW ISLES"
+          : "NEXT · " + STAGES[nextIsland(campaign.id)].name;
   }
   describePiece(description, descriptionRule);
   $("stage-objective").hidden = !campaign;
   if (campaign) {
     $("mode-label").textContent =
-      (campaign.id < LESSON_COUNT ? "LESSON " : "CHALLENGE ") +
-      String(campaign.id + 1).padStart(2, "0");
+      campaign.id >= 12
+        ? "MEADOW " + (campaign.id - 11) + " / 4"
+        : (campaign.id < LESSON_COUNT ? "LESSON " : "TRIAL ") +
+          String(campaign.id < 7 ? campaign.id + 1 : campaign.id - 6).padStart(
+            2,
+            "0",
+          );
     $("stage-name").textContent = STAGES[campaign.id].name;
     const progress = stageProgress(state);
     $("stage-progress").textContent = progress.text;
@@ -454,18 +491,28 @@ function ui() {
       ? state.turn + " DROPS"
       : "DROP " + (state.turn + 1) + " / " + campaign.budget;
   }
+  if (state.weather)
+    $("weather-label").textContent = weatherView(state).label.toUpperCase();
   const falling = state.mode === "classic" || campaign?.falling;
-  const controls = complete ? "kept" : falling ? "falling" : "waiting";
+  const controls = complete
+    ? "kept-" + campaign.id
+    : falling
+      ? "falling"
+      : "waiting";
   if (controlKind !== controls) {
     $("rotate").innerHTML = complete
       ? "<span>↻</span> Replay"
       : "<span>↻</span> Rotate <kbd>R</kbd>";
     $("drop").innerHTML = complete
-      ? campaign.id === 11
-        ? "All stages <span>↗</span>"
-        : campaign.id + 1 < LESSON_COUNT
-          ? "Next lesson <span>↗</span>"
-          : "Next challenge <span>↗</span>"
+      ? nextIsland(campaign.id) === null
+        ? "Journey map <span>↗</span>"
+        : campaign.id === 6
+          ? "Set sail <span>↗</span>"
+          : campaign.id >= 12
+            ? "Next island <span>↗</span>"
+            : campaign.id + 1 < LESSON_COUNT
+              ? "Next lesson <span>↗</span>"
+              : "Next challenge <span>↗</span>"
       : falling
         ? "Drop faster <span>↘</span>"
         : "Drop piece <span>↘</span>";
@@ -499,6 +546,26 @@ function ui() {
       ),
     ) + "%";
   $("pause").disabled = !started || state.over;
+  const token = world.pieceScreen;
+  const canvasRect = board.getBoundingClientRect();
+  for (const panel of [
+    $("stage-objective"),
+    document.querySelector(".seismic-display"),
+  ]) {
+    const r = panel.getBoundingClientRect();
+    const x = canvasRect.x + (token?.x || 0),
+      y = canvasRect.y + (token?.y || 0),
+      radius = token?.radius || 0;
+    panel.dataset.obscures = String(
+      started &&
+        !complete &&
+        !!token &&
+        x + radius > r.left &&
+        x - radius < r.right &&
+        y + radius > r.top &&
+        y - radius < r.bottom,
+    );
+  }
   drawPiece();
 }
 function clampCursor() {
@@ -506,13 +573,14 @@ function clampCursor() {
 }
 function drop() {
   if (inlineComplete()) {
-    if (state.campaign.id === 11) {
+    const next = nextIsland(state.campaign.id);
+    if (next === null) {
       selectedMode = "campaign";
-      selectedStage = 11;
+      selectedStage = state.campaign.id;
       showDialog("stages");
     } else {
       selectedMode = "campaign";
-      selectedStage = state.campaign.id + 1;
+      selectedStage = next;
       newGame();
     }
     return;
@@ -527,7 +595,7 @@ function land(event) {
   tone(event.quake ? "quake" : event.detonated ? "bomb" : event.type, event);
   world.impact(event, state);
   if (event.piece) cursor = rotateAim(cursor, event.piece, state.current);
-  if (state.campaign && guideEnabled) {
+  if (state.campaign && guideEnabled && state.campaign.id < 12) {
     lessonFeedback =
       event.type === "sun" &&
       !event.thawed &&
@@ -847,28 +915,59 @@ function showDialog(kind) {
   $("intro-rules").hidden = kind !== "start" && kind !== "new";
   $("mode-picker").hidden = !["start", "new", "stages"].includes(kind);
   $("stage-picker").hidden = kind !== "stages";
+  $("journey-map").hidden = kind !== "stages";
+  $("overlay").dataset.journey = String(kind === "stages");
   $("campaign-menu").hidden =
     !state.campaign || kind === "stages" || kind === "new";
   $("lesson-toggle").hidden =
     !state.campaign || !["pause", "help"].includes(kind);
   second.hidden = true;
+  start.disabled = false;
   $("modal-eyebrow").textContent = "A SMALL WORLD. A SIMPLE CHALLENGE.";
   $("modal-foot").textContent = "Best played with a little curiosity.";
   if (kind === "stages") {
     selectedMode = "campaign";
-    $("modal-eyebrow").textContent = "SEVEN LESSONS · FIVE CHALLENGES";
-    title.innerHTML = "Learn a little.<br><em>Keep a little.</em>";
+    $("modal-eyebrow").textContent = "YOUR ISLAND JOURNEY";
+    title.innerHTML = "Keep a little.<br><em>Go a little further.</em>";
+    const region = regionFor(selectedStage);
     const def = STAGES[selectedStage];
-    copy.innerHTML = `<b>${selectedStage < LESSON_COUNT ? "Lesson" : "Challenge"} ${String(selectedStage + 1).padStart(2, "0")} · ${def.name}</b><br>${def.goal}<br><small>${TAKEAWAYS[selectedStage]}</small>`;
+    copy.innerHTML = `<b>${region.name} · ${def.name}</b><br>${def.goal}<br><small>${def.hint}</small>`;
+    const map = $("journey-map");
+    map.replaceChildren();
+    REGIONS.forEach((r) => {
+      const button = document.createElement("button"),
+        kept = regionKept(campaignProgress, r);
+      button.dataset.region = r.id;
+      button.className = "journey-island";
+      button.classList.toggle("selected", r === region);
+      button.classList.toggle("kept", kept);
+      button.disabled = !r.stages.some((i) =>
+        stageUnlocked(campaignProgress, i),
+      );
+      button.setAttribute("aria-pressed", String(r === region));
+      button.innerHTML =
+        islandArt(r, kept) +
+        `<strong>${r.name}</strong><span>${button.disabled ? "Complete Home Island to set sail" : r.subtitle}</span><small>${r.stages.filter((i) => campaignProgress.stars[i] > 0).length} / ${r.stages.length} kept ${kept ? "· ✓" : ""}</small>`;
+      button.onclick = () => {
+        selectedStage =
+          r.stages.find(
+            (i) =>
+              !campaignProgress.stars[i] && stageUnlocked(campaignProgress, i),
+          ) ?? r.stages.find((i) => stageUnlocked(campaignProgress, i));
+        showDialog("stages");
+      };
+      map.append(button);
+    });
     const picker = $("stage-picker");
     picker.replaceChildren();
-    STAGES.forEach((d, i) => {
+    region.stages.forEach((i) => {
+      const d = STAGES[i];
       const b = document.createElement("button");
       b.dataset.stage = i;
-      b.disabled = i >= unlockedStages(campaignProgress);
+      b.disabled = !stageUnlocked(campaignProgress, i);
       b.className = i === selectedStage ? "selected" : "";
       b.textContent =
-        String(i + 1).padStart(2, "0") +
+        String(region.stages.indexOf(i) + 1).padStart(2, "0") +
         " " +
         d.name +
         " " +
@@ -882,6 +981,7 @@ function showDialog(kind) {
       picker.append(b);
     });
     start.textContent = "Play " + def.name + " ↗";
+    start.disabled = !stageUnlocked(campaignProgress, selectedStage);
     if (started || state.campaign) {
       second.hidden = false;
       second.textContent =
@@ -890,7 +990,9 @@ function showDialog(kind) {
           : "Back to your landscape";
     }
     $("modal-foot").textContent =
-      "Learn on the board, at your pace. Watch rule shows a small demonstration; guides can be hidden from Pause. Medals reward efficient drops and a low drain.";
+      region.id === "meadow"
+        ? "Prepare for gathering clouds. Keep a lake through the shower, then enjoy the sunshine. Medals reward care and efficient drops."
+        : "Keep the seven Home Island lessons to open Meadow Isles. Practice Coves offer optional trials. Your medals save on this browser.";
   } else if (kind === "over" && state.campaign) {
     $("modal-eyebrow").textContent =
       "STAGE " + (state.campaign.id + 1) + " · TRY AGAIN";
@@ -902,7 +1004,7 @@ function showDialog(kind) {
   } else if (kind === "start" || kind === "new") {
     title.innerHTML = "Keep a little<br><em>rain.</em>";
     copy.innerHTML =
-      "Choose Learn & play for seven field lessons and five challenges, with saved progress.<br>Classic starts flat and dry: build enclosures before water arrives. Daydream lets you practice.<br>Keep the drain low. Fire clears lakes; tall isolated peaks add earthquake pressure.";
+      "Set out on an Island journey: learn at Home Island, then keep the rain-swept Meadow Isles. Your medals mark the route.<br>Classic starts flat and dry with falling pieces and changing weather. Daydream lets you practice.<br>Catch water inside banks. Fire clears lakes; narrow peaks add earthquake pressure.";
     start.textContent =
       kind === "start" && saved && !saved.over
         ? "Continue your landscape ↗"
@@ -929,7 +1031,7 @@ function showDialog(kind) {
     title.innerHTML = "Go with<br>the <em>flow.</em>";
     copy.className = "instructions";
     copy.innerHTML =
-      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Land adds earthquake pressure; narrow towers above bank height add extra. Spread or lower tall peaks to keep pressure down. Water and ice add none. The striped forecast shows an Upper’s increase or a Downer’s relief. Pale foam marks active leaks. After a quake, rebuild damaged ground and hold a contained liquid lake for 2 seconds within 45 seconds to earn 500 × level.<br>Classic level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Learn & play:</b> seven field lessons, then five challenges. A quiet highlight and the piece-card note follow your actual landscape. Watch rule loops a demonstration in the preview; it never moves your piece. Guides can be hidden in Pause. Completion stays on the board; Next starts the following stage.<br><b>Classic:</b> dry start with falling pieces.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
+      "<b>Align your banks.</b> Placement is continuous. Partial overlaps make lower edges; imperfect seams can leak. The soft shadow shows your footprint. Turn view to judge depth.<br><b>↑ Upper</b> raises land and repairs holes.<br><b>↓ Downer</b> lowers covered land toward its lowest point; touching a hole expands it.<br><b>● Water</b> flows downhill. Edges and holes fill the drain.<br><b>✦ Fire</b> evaporates a lake for points and drain relief. Dry fire flattens land.<br><b>✹ Bomb</b> punches a hole. Bombing a hole triggers more bombs.<br><br>Lakes, deep-water ducks, and a rainbow multiply scores. Land adds earthquake pressure; narrow towers above bank height add extra. Spread or lower tall peaks to keep pressure down. Water and ice add none. The striped forecast shows an Upper’s increase or a Downer’s relief. Pale foam marks active leaks. After a quake, rebuild damaged ground and hold a contained liquid lake for 2 seconds within 45 seconds to earn 500 × level.<br>Classic level 2 adds ice; fire thaws it. Level 4 adds mines; fire detonates them. Five lakes at level-up earn a Smart bomb.<br><br><b>Island journey:</b> keep seven Home Island lessons to open the four Meadow Isles. Five optional Practice Coves preserve the earlier trials. A quiet highlight and the piece-card note follow your actual landscape. Watch rule loops a demonstration in the preview; it never moves your piece. Guides can be hidden in Pause. Completion stays on the board; Next starts the following stage.<br><b>Weather:</b> prepare as clouds gather. Keep a contained lake through the shower; Fire goals count clears after that. The readout shows time until rain. Pause stops weather. Missed showers return on the next cycle.<br><b>Classic:</b> dry start with falling pieces and changing weather.<br><b>Daydream:</b> a practice lake; pieces wait for Drop.";
     start.textContent = started ? "Back to your landscape ↗" : "Got it ↗";
     $("modal-foot").textContent =
       "Slide to steer; re-touch keeps your aim. Arrows: fine steps. Keyboard: arrows / Shift for larger steps / R / Space.";
@@ -971,12 +1073,24 @@ function resume() {
   ).focus({ preventScroll: true });
 }
 function newGame() {
+  const previousRegion = state.campaign
+    ? regionFor(state.campaign.id).id
+    : state.mode;
   state =
     selectedMode === "campaign"
       ? createStage(selectedStage)
       : createGame(selectedMode);
   cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 };
   world.clear();
+  const nextRegion = state.campaign
+    ? regionFor(state.campaign.id).id
+    : state.mode;
+  if (!reduced && previousRegion !== nextRegion) {
+    const landscape = document.querySelector(".landscape");
+    landscape.classList.remove("sailing");
+    void landscape.offsetWidth;
+    landscape.classList.add("sailing");
+  }
   watchingRule = false;
   activeLesson = null;
   lessonFeedback = null;

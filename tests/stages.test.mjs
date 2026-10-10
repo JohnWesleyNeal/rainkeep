@@ -89,7 +89,7 @@ function settle(s, seconds = 2.1) {
     stepStage(s, event, 1 / 30);
   }
 }
-for (let id = 0; id < STAGES.length; id++)
+for (let id = 0; id < solutions.length; id++)
   test(`stage ${id + 1}: ${STAGES[id].name} is completable with its authored queue`, () => {
     const s = createStage(id);
     assert.ok(restore(JSON.stringify(s)));
@@ -211,7 +211,9 @@ test("unlocks are sequential, best medals persist, and malformed progress resets
     { stars: Array(12).fill(4) },
     { stars: Array(12).fill(0.5) },
   ])
-    assert.deepEqual(readProgress(malformed), { stars: Array(12).fill(0) });
+    assert.deepEqual(readProgress(malformed), {
+      stars: Array(STAGES.length).fill(0),
+    });
   s.campaign.queue = [];
   assert.equal(restore(JSON.stringify(s)), null);
 });

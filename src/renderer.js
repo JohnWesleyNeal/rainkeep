@@ -19,6 +19,8 @@ import { createTokenWorkshop } from "./tokens.js";
 import { createCraters } from "./craters.js";
 import { drawWaterBubble } from "./bubble-canvas.js";
 import { addIslandBody, solidFootprint } from "./diorama.js";
+import { createWeatherVisual, drawCanvasWeather } from "./weather-visual.js";
+import { weatherView } from "./weather.js";
 
 const HALF = SIZE / 2;
 const palette = {
@@ -414,6 +416,8 @@ export function createWorldRenderer(canvas, reduced = false) {
     spillZ = new THREE.Vector3();
   let rippleIndex = 0,
     worldTime = 0;
+  const tokenProjection = new THREE.Vector3();
+  let tokenScreen = null;
 
   const stone = new THREE.InstancedMesh(
     new THREE.DodecahedronGeometry(0.25, 0),
@@ -476,6 +480,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     clouds.add(sprite);
   }
   scene.add(clouds);
+  const weatherVisual = createWeatherVisual(scene, reduced);
 
   const shadowMaterial = new THREE.MeshBasicMaterial({
     transparent: true,
@@ -1121,6 +1126,11 @@ export function createWorldRenderer(canvas, reduced = false) {
     return width / span / Math.sqrt(2);
   }
   function render(s, aim, time, dt, options) {
+    const weather = weatherVisual.render(s, time);
+    key.intensity = 2.15 - weather.cloud * 0.7;
+    hemi.intensity = 1.15 + weather.cloud * 0.1;
+    key.color.setHex(s.campaign?.id >= 12 ? 0xffedc9 : 0xffe4b6);
+    grass.setHex(s.campaign?.id >= 12 ? 0x8eaa78 : 0x7f9f8c);
     worldTime = time;
     elapsed += dt;
     if (s !== lastState || dirty || elapsed - lastUpdate > 0.034) {
@@ -1145,6 +1155,19 @@ export function createWorldRenderer(canvas, reduced = false) {
       Math.max(s.altitude, landingHeight(s, aim)),
       aim.y - HALF + shadow.userData.h / 2,
     );
+    tokenProjection.copy(piece.position);
+    tokenProjection.y += 1;
+    tokenProjection.project(camera);
+    tokenScreen = piece.visible
+      ? {
+          x: ((tokenProjection.x + 1) * width) / 2,
+          y: ((1 - tokenProjection.y) * height) / 2,
+          radius: Math.max(
+            20,
+            (((shadow.userData.w + shadow.userData.h) * width) / 51) * 0.35,
+          ),
+        }
+      : null;
     if (!options.paused) turnAngle *= Math.exp(-dt * 24);
     piece.rotation.y = turnAngle;
     shadow.visible = piece.visible;
@@ -1284,7 +1307,7 @@ export function createWorldRenderer(canvas, reduced = false) {
         g.scale.setScalar(1);
       }
     });
-    rainbow.visible = options.bonuses.rainbow;
+    rainbow.visible = options.bonuses.rainbow || weather.phase === "kept";
     for (const g of hazardCache.values()) g.visible = false;
     for (let n = 0; n < s.hazards.length + s.mines.length; n++) {
       const h = s.hazards[n],
@@ -1341,8 +1364,12 @@ export function createWorldRenderer(canvas, reduced = false) {
   const previewTarget = new THREE.WebGLRenderTarget(150, 100, { samples: 2 });
   previewTarget.texture.colorSpace = THREE.SRGBColorSpace;
   const previewPixels = new Uint8Array(150 * 100 * 4);
-  canvas.addEventListener("webglcontextrestored", () => {
+  canvas.addEventListener("webglcontextlost", () => {
+    // Release old-context listeners before Three rebuilds its GPU caches.
     environmentTarget.dispose();
+    previewTarget.dispose();
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
     const source = new THREE.CanvasTexture(environmentCanvas);
     source.colorSpace = THREE.SRGBColorSpace;
     source.mapping = THREE.EquirectangularReflectionMapping;
@@ -1405,6 +1432,9 @@ export function createWorldRenderer(canvas, reduced = false) {
     pick,
     impact,
     preview: drawPreview,
+    get pieceScreen() {
+      return tokenScreen;
+    },
     twist() {
       if (!reduced) turnAngle += Math.PI / 2;
     },
@@ -1422,6 +1452,7 @@ export function createWorldRenderer(canvas, reduced = false) {
           pose = { bob: o.position.y, lean: o.rotation.z, stretch: o.scale.y };
       });
       return {
+        ...weatherVisual.stats,
         ...feedback.stats,
         leakPaths: tracedLeaks.length,
         foamBeads: leakFoam.count,
@@ -1483,7 +1514,8 @@ function createCanvasRenderer(canvas, reduced = false) {
   let width,
     height,
     unit,
-    quarter = 0;
+    quarter = 0,
+    tokenScreen = null;
   const rotate = (x, y) => {
     for (let n = 0; n < quarter; n++) [x, y] = [y, SIZE - x];
     return [x, y];
@@ -1513,7 +1545,47 @@ function createCanvasRenderer(canvas, reduced = false) {
     return unit;
   }
   function render(s, aim, t, dt, o) {
+    tokenScreen = null;
     ctx.clearRect(0, 0, width, height);
+    const weather = weatherView(s);
+    if (weather.cloud > 0.1) {
+      ctx.fillStyle = `rgba(54,80,95,${weather.cloud * 0.28})`;
+      for (let n = 0; n < 5; n++) {
+        ctx.beginPath();
+        ctx.ellipse(
+          width * (n / 4),
+          height * 0.12,
+          width * 0.27,
+          height * 0.09,
+          0,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
+    }
+    if (weather.phase === "kept") {
+      const colors = [
+        "#ef9e8a80",
+        "#eecb8780",
+        "#d7e6a380",
+        "#9cddc880",
+        "#a4cce980",
+      ];
+      colors.forEach((c, n) => {
+        ctx.strokeStyle = c;
+        ctx.lineWidth = Math.max(2, unit * 0.4);
+        ctx.beginPath();
+        ctx.arc(
+          width * 0.52,
+          height * 0.39,
+          unit * (9 - n * 0.45),
+          Math.PI,
+          Math.PI * 2,
+        );
+        ctx.stroke();
+      });
+    }
     const shore = waterlineField(s);
     const warmPeaks = new Set(terrainPressure(s).spikes.map(({ i }) => i));
     polygon(
@@ -1617,7 +1689,7 @@ function createCanvasRenderer(canvas, reduced = false) {
           ? "#a1e2ed"
           : warmPeaks.has(i)
             ? "#d4b484"
-            : `hsl(137 20% ${56 + h * 2}%)`,
+            : `hsl(${s.campaign?.id >= 12 ? 98 : 137} 20% ${56 + h * 2}%)`,
       );
       if (w > 0.04)
         polygon(
@@ -1706,6 +1778,15 @@ function createCanvasRenderer(canvas, reduced = false) {
     }
     if (o.showPiece && !s.over) {
       const z = Math.max(s.altitude, landingHeight(s, aim));
+      const shape = cells(s.current),
+        w = Math.max(...shape.map((p) => p[0])) + 1,
+        h = Math.max(...shape.map((p) => p[1])) + 1;
+      const p = project(aim.x + w / 2, aim.y + h / 2, z + 1);
+      tokenScreen = {
+        x: p[0],
+        y: p[1],
+        radius: Math.max(20, (w + h) * unit * 0.5),
+      };
       ctx.globalAlpha = 0.24;
       for (const [dx, dy] of cells(s.current))
         polygon(
@@ -1742,6 +1823,7 @@ function createCanvasRenderer(canvas, reduced = false) {
         ctx.fill();
       }
     }
+    drawCanvasWeather(ctx, s, t, project, unit, reduced);
   }
   function pick(clientX, clientY, p) {
     const r = canvas.getBoundingClientRect(),
@@ -1758,6 +1840,9 @@ function createCanvasRenderer(canvas, reduced = false) {
   }
   return {
     kind: "canvas",
+    get pieceScreen() {
+      return tokenScreen;
+    },
     resize,
     render,
     pick,
