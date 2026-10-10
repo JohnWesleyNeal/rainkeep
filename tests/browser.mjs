@@ -389,18 +389,25 @@ try {
     await drop(page, 11, 6);
     await drop(page, 15, 15);
     await drop(page, 0, 24);
+    // Slower renderers may reach natural rain while the bank is being built.
+    // Wait for a dry phase, then require a new complete shower after the tap.
+    await page.locator("#bring-rain").waitFor({
+      state: "visible",
+      timeout: 90000,
+    });
+    const keptBefore = (await state(page)).campaign.keptShowers;
     await page.locator("#bring-rain").tap();
+    const phase = (await state(page)).weather.clock % 64;
     ok(
       "Bring rain begins the cloud warning",
-      (await state(page)).weather.clock >= 18 &&
-        (await state(page)).weather.clock < 20,
+      phase >= 18 && phase < 26,
     );
     await page.waitForFunction(
-      () =>
+      (previous) =>
         JSON.parse(localStorage.getItem("rainkeep.run.v1")).campaign
-          .keptShowers >= 1,
-      null,
-      { timeout: 30000 },
+          .keptShowers > previous,
+      keptBefore,
+      { timeout: 90000 },
     );
     await drop(page, 15, 15);
     ok(
