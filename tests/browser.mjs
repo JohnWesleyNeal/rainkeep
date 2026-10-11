@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { chromium } from "playwright";
 import { createServer, preview } from "vite";
 import { createStage } from "../src/stages.js";
+import { advanceGrowth } from "../src/growth.js";
 import { createGame, LIMIT } from "../src/simulation.js";
 
 // Independent browser profiles; fixtures enter through the real saved-run reader.
@@ -170,7 +171,9 @@ try {
     );
     await drop(page, 15, 15);
     await page.waitForFunction(() =>
-      document.querySelector("#placement-text").textContent.includes("Evaporates"),
+      document
+        .querySelector("#placement-text")
+        .textContent.includes("Evaporates"),
     );
     ok(
       "Fire identifies its actual connected lake",
@@ -401,10 +404,7 @@ try {
     const keptBefore = (await state(page)).campaign.keptShowers;
     await page.locator("#bring-rain").tap();
     const phase = (await state(page)).weather.clock % 64;
-    ok(
-      "Bring rain begins the cloud warning",
-      phase >= 18 && phase < 26,
-    );
+    ok("Bring rain begins the cloud warning", phase >= 18 && phase < 26);
     await page.waitForFunction(
       (previous) =>
         JSON.parse(localStorage.getItem("rainkeep.run.v1")).campaign
@@ -418,6 +418,136 @@ try {
       (await state(page)).campaign.status === "complete",
     );
     await page.screenshot({ path: output + "/meadow-kept.png" });
+    await context.close();
+  }
+  {
+    const fixture = createGame("daydream", 31);
+    fixture.spill = 480;
+    const { page, context } = await open({ fixture });
+    await play(page);
+    await drop(page, 15, 15);
+    await drop(page, 15, 15);
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem("rainkeep.run.v1")).growth.charms > 0,
+    );
+    const grown = await state(page);
+    ok(
+      "real scoring earns a visible score chapter and rain charms",
+      grown.growth.milestone > 0 &&
+        !(await page.locator("#growth-progress").isHidden()),
+    );
+    ok(
+      "contained clears feed permanent discoveries",
+      (
+        await page.evaluate(() =>
+          JSON.parse(localStorage.getItem("rainkeep.keeper.v1")),
+        )
+      ).discoveries.includes("lake"),
+    );
+    await fit(page, "growing Daydream");
+    await page.locator("#rain-charm").tap();
+    const spent = await state(page);
+    ok(
+      "rain charm clears real drain and spends exactly one reward",
+      Math.abs(spent.spill - Math.max(0, grown.spill - 160)) < 0.1 &&
+        spent.growth.charms === grown.growth.charms - 1,
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#growth-banner").hidden &&
+        !document.querySelector("#toast").classList.contains("visible"),
+    );
+    await page.screenshot({ path: output + "/growing-haven.png" });
+    await page.locator("#keeper-link").tap();
+    const elapsed = (await state(page)).elapsed;
+    ok(
+      "journal shows permanent rank and collected discoveries",
+      (await page.locator(".keeper-card").isVisible()) &&
+        (await page.locator(".discovery.earned").count()) > 0,
+    );
+    await page.waitForTimeout(300);
+    ok("journal pauses the landscape", (await state(page)).elapsed === elapsed);
+    await page.screenshot({ path: output + "/keeper-journal.png" });
+    await page.locator("#journal-close").tap();
+    await page.waitForFunction(() => document.querySelector("#overlay").hidden);
+    const profile = await page.evaluate(() =>
+      localStorage.getItem("rainkeep.keeper.v1"),
+    );
+    await page.reload();
+    await play(page);
+    ok(
+      "reload preserves spent charms and does not award growth twice",
+      (await state(page)).growth.charms === spent.growth.charms &&
+        (await page.evaluate(() =>
+          localStorage.getItem("rainkeep.keeper.v1"),
+        )) === profile,
+    );
+    await context.close();
+  }
+  for (const [width, height, canvas] of [
+    [320, 568, false],
+    [390, 844, false],
+    [844, 390, false],
+    [390, 650, true],
+  ]) {
+    const fixture = createGame("daydream", 23);
+    fixture.score = 70000;
+    advanceGrowth(fixture);
+    fixture.spill = 180;
+    const { page, context } = await open({
+      fixture,
+      width,
+      height,
+      canvas,
+      reduced: true,
+    });
+    await play(page);
+    await fit(
+      page,
+      `late haven ${width}x${height} ${canvas ? "Canvas" : "WebGL"}`,
+    );
+    ok(
+      `late haven ${width}: reward control fits`,
+      await page.locator("#rain-charm").evaluate((e) => {
+        const r = e.getBoundingClientRect();
+        return (
+          r.width >= 44 &&
+          r.height >= 44 &&
+          r.right <= innerWidth &&
+          r.bottom <= innerHeight
+        );
+      }),
+    );
+    await page.waitForFunction(
+      () => !document.querySelector("#toast").classList.contains("visible"),
+    );
+    await page.screenshot({
+      path: `${output}/late-haven-${width}-${canvas ? "canvas" : "webgl"}.png`,
+    });
+    await page.locator("#keeper-link").tap();
+    ok(
+      `late haven ${width}: journal fits without horizontal scrolling`,
+      await page.evaluate(
+        () =>
+          document.querySelector(".modal").scrollWidth <=
+          document.querySelector(".modal").clientWidth + 1,
+      ),
+    );
+    await page.locator("#journal-close").tap();
+    await context.close();
+  }
+  {
+    const { page, context } = await open({
+      fixture: createGame("daydream", 7, 2),
+    });
+    await play(page);
+    ok(
+      "earlier three-piece runs retain their original balance",
+      (await state(page)).version === 4 &&
+        (await state(page)).growth === undefined &&
+        (await page.locator("#rain-charm").isHidden()),
+    );
     await context.close();
   }
   for (const canvas of [false, true]) {
@@ -440,8 +570,8 @@ try {
     await page.reload();
     await play(page);
     ok(
-      `${canvas ? "Canvas" : "WebGL"}: v4 reload`,
-      (await state(page)).version === 4,
+      `${canvas ? "Canvas" : "WebGL"}: v5 reload`,
+      (await state(page)).version === 5,
     );
     await page.locator("#sound").tap();
     ok(

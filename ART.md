@@ -1,5 +1,11 @@
 # Rainkeep art
 
+## A living haven (2.1)
+
+Permanent Keeper ranks and current-run score chapters grow four small floating garden shelves beyond the playable terrain. Wildflowers, reeds, willow crowns, warm lanterns, blossom canopies and suspended golden lights use fixed instanced meshes and shared geometry. They never change collision, terrain, water or the placement footprint. The higher of earned Keeper rank and current chapter determines the visible growth. Reduced motion makes arrival immediate and stops the gentle shelf movement; Canvas includes simplified matching shelves and plants.
+
+The Keeper Journal uses a cream field-book palette and a small illustrated haven built with local HTML/CSS. A score meter, short milestone celebration and banked charm count show progress without interrupting play. No new bitmap, external asset, or audio sample is required.
+
 ## Warm miniature redesign (2.0)
 
 The interface uses forest green, cream, sage and clay, with larger instructions and a compact action dock. Objective and risk information sits outside the interactive canvas. The portrait camera is steeper; steering uses the camera's ground projection rather than a fixed isometric ratio. The rock underside is shallower, ground has broad low-contrast color variation, and bank waterlines are slightly wider for phone readability. The existing local sky and original modeled pieces remain in use.

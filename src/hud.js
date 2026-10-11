@@ -74,7 +74,7 @@ export function createHud() {
     $("bring-rain").disabled = paused || s.dropping;
     $("next-label").hidden = false;
     $("next-label").textContent =
-      !c && s.version !== 4 ? "NEXT · LEGACY RUN" : "COMING NEXT";
+      !c && s.version < 4 ? "NEXT · LEGACY RUN" : "COMING NEXT";
     $("watch-rule").hidden = !c || c.id >= 12 || result;
     const p = peekPieces(s),
       key = JSON.stringify(p);

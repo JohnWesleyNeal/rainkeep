@@ -114,7 +114,7 @@ test("new saves reject corrupt or contradictory generator state", () => {
     (s) => (s.upcoming[0].type = "invalid"),
     (s) => (s.queueState.seed = -1),
     (s) => (s.queueState.fireGap = 9),
-    (s) => (s.rulesVersion = 3),
+    (s) => (s.rulesVersion = 4),
     (s) => delete s.queueState,
     (s) => (s.next = { type: "bomb", shape: 1, rotation: 0 }),
   ]) {

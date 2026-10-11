@@ -48,9 +48,19 @@
               <div class="stage-goal-meter"><i id="stage-goal-bar"></i></div>
             </div>
             <div id="free-objective">
-              <strong>Shape. Catch. Evaporate.</strong
+              <strong id="free-title">Shape. Catch. Evaporate.</strong
               ><span id="free-instruction">Build banks to keep the rain.</span>
+              <div
+                id="growth-progress"
+                role="progressbar"
+                aria-label="Score chapter progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                hidden
+              ></div>
             </div>
+            <button id="rain-charm" hidden>✦ Rain charm</button>
             <button id="bring-rain" class="subtle-btn" hidden>
               ☂ Bring rain
             </button>
@@ -115,6 +125,7 @@
               Smart bomb · 0</button
             ><span id="turn-label">DROP 01</span>
           </div>
+          <div id="growth-banner" role="status" aria-live="polite" hidden></div>
           <div id="toast" role="status" aria-live="polite"></div>
         </section>
         <aside class="console" aria-label="Game controls">
@@ -122,6 +133,9 @@
             <div>
               <span class="eyebrow">SCORE</span><strong id="score">0</strong>
             </div>
+            <button id="keeper-link" class="keeper-link">
+              Keeper journal ↗
+            </button>
             <div class="best">
               <span class="eyebrow">BEST</span><span id="best">0</span>
             </div>
@@ -235,6 +249,9 @@
         aria-modal="true"
         aria-labelledby="modal-title"
       >
+        <button id="journal-close" class="text-btn" hidden>
+          ← Back to your landscape
+        </button>
         <span class="eyebrow" id="modal-eyebrow"
           >A LITTLE WORLD, IN YOUR HANDS</span
         >
@@ -248,9 +265,9 @@
           <button data-mode="campaign" aria-pressed="true">
             Island journey<small>16 islands · choose your path</small></button
           ><button data-mode="daydream" aria-pressed="false">
-            Daydream<small>Take your time</small></button
+            Daydream<small>Grow a haven at your pace</small></button
           ><button data-mode="classic" aria-pressed="false">
-            Classic<small>Falling pieces · chase a score</small>
+            Classic<small>Score chapters · falling pieces</small>
           </button>
         </div>
         <nav id="journey-map" hidden aria-label="Island journey"></nav>
@@ -262,6 +279,9 @@
           Browse every island ↗</button
         ><button id="lesson-toggle" class="text-btn" aria-pressed="true" hidden>
           Lesson guides · on
+        </button>
+        <button id="journal-menu" class="text-btn">
+          Your Keeper Journal ↗
         </button>
         <p class="modal-foot" id="modal-foot">
           Every island is open. First Pond is a good place to begin.

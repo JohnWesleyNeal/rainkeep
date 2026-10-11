@@ -1,6 +1,7 @@
 export const SAVE = "rainkeep.run.v1";
 export const BEST = "rainkeep.best.v1";
 export const CAMPAIGN = "rainkeep.campaign.v1";
+export const GROWTH_BEST = "rainkeep.best.rules3";
 export const NEW_BEST = "rainkeep.best.rules2";
 export function createStorage(onUnavailable) {
   let warned = false;

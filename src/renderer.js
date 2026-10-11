@@ -1,3 +1,4 @@
+import { createHavenVisual, drawCanvasHaven } from "./haven-visual.js";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import {
@@ -73,6 +74,7 @@ export function createWorldRenderer(canvas, reduced = false) {
   renderer.setClearColor(0x153747, 0);
   const scene = new THREE.Scene();
   const landingGhost = createLandingGhost(scene);
+  const haven = createHavenVisual(scene, reduced);
   const camera = new THREE.OrthographicCamera(-27, 27, 22, -22, 0.1, 180);
   const hemi = new THREE.HemisphereLight(0xc4efff, 0x435b46, 1.15);
   scene.add(hemi);
@@ -1142,6 +1144,7 @@ export function createWorldRenderer(canvas, reduced = false) {
     return width / span / Math.sqrt(2);
   }
   function render(s, aim, time, dt, options) {
+    haven.update(options.growth, dt, time, options.paused);
     const weather = weatherVisual.render(s, time);
     key.intensity = 2.15 - weather.cloud * 0.7;
     hemi.intensity = 1.15 + weather.cloud * 0.1;
@@ -1622,6 +1625,7 @@ function createCanvasRenderer(canvas, reduced = false) {
         ctx.stroke();
       });
     }
+    drawCanvasHaven(ctx, project, unit, o.growth, t, reduced);
     const shore = waterlineField(s);
     const warmPeaks = new Set(terrainPressure(s).spikes.map(({ i }) => i));
     polygon(

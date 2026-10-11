@@ -1,5 +1,15 @@
 import "./style.css";
 import "./layout.css";
+import "./growth.css";
+import { useRainCharm, growthView } from "./growth.js";
+import {
+  KEEPER_KEY,
+  readKeeper,
+  keeperView,
+  syncKeeper,
+  DISCOVERIES,
+} from "./keeper.js";
+import { updateGrowthHUD } from "./keeper-ui.js";
 import {
   createStorage,
   readBests,
@@ -7,6 +17,7 @@ import {
   BEST,
   CAMPAIGN,
   NEW_BEST,
+  GROWTH_BEST,
 } from "./session.js";
 import { createInputController } from "./input.js";
 import { createNavigation } from "./navigation.js";
@@ -79,9 +90,21 @@ let cursor = state.aim ? { ...state.aim } : { x: 8, y: 8 },
   dialogKind = "start",
   toastUntil = 0;
 let soundOn = read("rainkeep.sound") === "on",
-  best = readBests(read(NEW_BEST)),
+  best = readBests(read(GROWTH_BEST)),
+  previousBest = readBests(read(NEW_BEST)),
   legacyBest = readBests(read(BEST)),
   deferredInstall;
+const keeper = readKeeper(read(KEEPER_KEY));
+if (
+  syncKeeper(keeper, {
+    progress: campaignProgress,
+    records: [best, previousBest, legacyBest],
+  }).changed
+)
+  write(KEEPER_KEY, JSON.stringify(keeper));
+let observedState = state,
+  observedMilestone = state.growth?.milestone || 0,
+  pulseUntil = 0;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let guideEnabled = read("rainkeep.guides") !== "off",
   watchingRule = false,
@@ -122,10 +145,22 @@ function save() {
 }
 function record() {
   if (state.campaign) return;
-  const records = state.rulesVersion === 2 ? best : legacyBest;
+  const records =
+    state.rulesVersion === 3
+      ? best
+      : state.rulesVersion === 2
+        ? previousBest
+        : legacyBest;
   if (state.score > records[state.mode]) {
     records[state.mode] = state.score;
-    write(state.rulesVersion === 2 ? NEW_BEST : BEST, JSON.stringify(records));
+    write(
+      state.rulesVersion === 3
+        ? GROWTH_BEST
+        : state.rulesVersion === 2
+          ? NEW_BEST
+          : BEST,
+      JSON.stringify(records),
+    );
   }
 }
 const sounds = createSoundBank(soundOn);
@@ -181,6 +216,10 @@ function render(dt) {
     showPiece: started && !state.over && state.campaign?.status !== "complete",
     bonuses: worldBonus,
     placement,
+    growth: Math.max(
+      keeperView(keeper).rank,
+      Math.min(6, state.growth?.milestone || 0),
+    ),
     lessonTarget:
       guideEnabled && started && state.campaign?.status === "playing"
         ? activeLesson?.target
@@ -270,8 +309,47 @@ function drawPiece() {
     preview.stroke();
   }
 }
+function pulse(title, detail) {
+  const banner = $("growth-banner");
+  const heading = document.createElement("strong"),
+    note = document.createElement("span");
+  heading.textContent = title;
+  note.textContent = detail;
+  banner.replaceChildren(heading, note);
+  banner.hidden = false;
+  pulseUntil = performance.now() + 4200;
+}
+function refreshKeeper(event, notify = false) {
+  const change = syncKeeper(keeper, {
+    state: started ? state : null,
+    progress: campaignProgress,
+    records: [best, previousBest, legacyBest],
+    event,
+  });
+  if (change.changed) write(KEEPER_KEY, JSON.stringify(keeper));
+  if (notify && change.rankUp)
+    pulse(keeperView(keeper).name, "Keeper rank up · your shore is growing");
+  else if (notify && change.added.length)
+    pulse(
+      DISCOVERIES.find((d) => d.id === change.added[0]).name,
+      "New field discovery · +200 permanent growth",
+    );
+}
 function ui() {
   record();
+  refreshKeeper();
+  if (observedState !== state) {
+    observedState = state;
+    observedMilestone = state.growth?.milestone || 0;
+  } else if ((state.growth?.milestone || 0) > observedMilestone) {
+    const chapters = state.growth.milestone - observedMilestone;
+    observedMilestone = state.growth.milestone;
+    pulse(
+      growthView(state).name,
+      `${chapters} score milestone${chapters > 1 ? "s" : ""} · ${state.growth.charms} rain charm${state.growth.charms === 1 ? "" : "s"} banked`,
+    );
+    tone("recovery");
+  }
   worldBonus = bonuses(state);
   $("level").textContent = state.level;
   $("lakes").textContent = worldBonus.lakes;
@@ -353,7 +431,11 @@ function ui() {
   }
   $("score").textContent = String(Math.floor(state.score)).padStart(5, "0");
   $("best").textContent = String(
-    (state.rulesVersion === 2 ? best : legacyBest)[state.mode],
+    (state.rulesVersion === 3
+      ? best
+      : state.rulesVersion === 2
+        ? previousBest
+        : legacyBest)[state.mode],
   );
   const percent = Math.min(100, Math.floor((state.spill / LIMIT) * 100));
   $("spill-text").textContent = percent + "%";
@@ -478,6 +560,11 @@ function ui() {
       ? state.turn + " DROPS"
       : "DROP " + (state.turn + 1) + " / " + campaign.budget;
   }
+  if (state.growth && !state.weather)
+    $("weather-label").textContent =
+      state.mode === "classic"
+        ? `LEVEL ${state.level} · CHAPTER ${Math.min(7, state.growth.milestone + 1)} / 7`
+        : `CHAPTER ${Math.min(7, state.growth.milestone + 1)} / 7 · YOUR PACE`;
   if (state.weather)
     $("weather-label").textContent = weatherView(state).label.toUpperCase();
   const falling = state.mode === "classic" || campaign?.falling;
@@ -561,6 +648,7 @@ function ui() {
       ? previewPlacement(state, cursor)
       : null;
   updateHud(state, placement, paused);
+  updateGrowthHUD(state, keeper, paused);
 }
 function clampCursor() {
   cursor = clampAim(cursor, state.current);
@@ -592,6 +680,10 @@ function drop() {
   ui();
 }
 function land(event) {
+  refreshKeeper(
+    event,
+    !state.growth || state.growth.milestone === observedMilestone,
+  );
   tone(event.quake ? "quake" : event.detonated ? "bomb" : event.type, event);
   world.impact(event, state);
   if (event.piece) cursor = rotateAim(cursor, event.piece, state.current);
@@ -711,6 +803,21 @@ $("smart-bomb").onclick = () => {
   }
 };
 $("help").onclick = () => showDialog("help");
+$("keeper-link").onclick = $("journal-menu").onclick = () =>
+  showDialog("journal");
+$("journal-close").onclick = () => (started ? resume() : showDialog("start"));
+$("rain-charm").onclick = () => {
+  if (paused) return;
+  const relief = useRainCharm(state);
+  if (relief) {
+    tone("recovery");
+    toast(
+      `A little breathing room · drain −${Math.round((relief / LIMIT) * 100)}%`,
+    );
+    save();
+    ui();
+  }
+};
 $("watch-rule").onclick = () => {
   watchingRule = !watchingRule;
   demoStartedAt = animation;
@@ -755,6 +862,7 @@ function showKept() {
     if (state.campaign?.status === "complete") {
       campaignProgress = finishStage(campaignProgress, state);
       write(CAMPAIGN, JSON.stringify(campaignProgress));
+      refreshKeeper(null, true);
     }
     record();
     completedState = state;
@@ -773,6 +881,8 @@ const navigation = createNavigation({
     selectedStage,
     best,
     legacyBest,
+    previousBest,
+    keeper,
   }),
   choose: (mode, stage) => {
     selectedMode = mode;
@@ -821,6 +931,7 @@ function resume() {
   ).focus({ preventScroll: true });
 }
 function newGame() {
+  $("growth-banner").hidden = true;
   const previousRegion = state.campaign
     ? regionFor(state.campaign.id).id
     : state.mode;
@@ -862,7 +973,7 @@ $("start").onclick = () => {
     selectedStage = state.campaign.id;
     newGame();
   } else if (dialogKind === "pause") resume();
-  else if (dialogKind === "help") {
+  else if (dialogKind === "help" || dialogKind === "journal") {
     if (started) resume();
     else showDialog("start");
   } else if (dialogKind === "over") showDialog("new");
@@ -995,6 +1106,7 @@ function frame(now) {
     ui();
     uiTime = now;
   }
+  if (now > pulseUntil) $("growth-banner").hidden = true;
   if (now > toastUntil) $("toast").classList.remove("visible");
   requestAnimationFrame(frame);
 }

@@ -32,7 +32,7 @@ const openings = {
   ],
 };
 export const buildDrops = (s) =>
-  s.rulesVersion === 2 ? (s.mode === "classic" ? 6 : 0) : 12;
+  s.rulesVersion >= 2 ? (s.mode === "classic" ? 6 : 0) : 12;
 export function drawQueuedPiece(s, turn) {
   const q = s.queueState;
   const random = () => {

@@ -1,3 +1,4 @@
+import { journalHTML } from "./keeper-ui.js";
 import {
   REGIONS,
   regionFor,
@@ -11,27 +12,48 @@ const $ = (id) => document.getElementById(id);
 export function createNavigation(context) {
   return function showDialog(kind) {
     context.begin(kind);
-    const { state, started, saved, campaignProgress, best, legacyBest } =
-      context.getSession();
+    const {
+      state,
+      started,
+      saved,
+      campaignProgress,
+      best,
+      legacyBest,
+      previousBest,
+      keeper,
+    } = context.getSession();
     let { selectedMode, selectedStage } = context.getSession();
     const title = $("modal-title"),
       copy = $("modal-copy"),
       start = $("start"),
       second = $("secondary");
     copy.className = "";
+    $("journal-close").hidden = kind !== "journal";
+    $("journal-menu").hidden = kind === "journal" || kind === "help";
+    $("overlay").dataset.journal = String(kind === "journal");
     $("intro-rules").hidden = kind !== "start" && kind !== "new";
     $("mode-picker").hidden = !["start", "new", "stages"].includes(kind);
     $("stage-picker").hidden = kind !== "stages";
     $("journey-map").hidden = kind !== "stages";
     $("overlay").dataset.journey = String(kind === "stages");
-    $("campaign-menu").hidden = kind === "stages" || kind === "help";
+    $("campaign-menu").hidden = ["stages", "help", "journal"].includes(kind);
     $("lesson-toggle").hidden =
       !state.campaign || !["pause", "help"].includes(kind);
     second.hidden = true;
     start.disabled = false;
     $("modal-eyebrow").textContent = "A SMALL WORLD. A SIMPLE CHALLENGE.";
     $("modal-foot").textContent = "Best played with a little curiosity.";
-    if (kind === "stages") {
+    if (kind === "journal") {
+      $("modal-eyebrow").textContent = "A HAVEN THAT GROWS WITH YOU";
+      title.innerHTML = "Your Keeper<br><em>Journal.</em>";
+      copy.className = "keeper-journal";
+      copy.innerHTML = journalHTML(keeper, state);
+      start.textContent = started
+        ? "Back to your landscape ↗"
+        : "Back to play ↗";
+      $("modal-foot").textContent =
+        "All islands remain open. Every drop is still yours to place.";
+    } else if (kind === "stages") {
       selectedMode = "campaign";
       context.choose(selectedMode, selectedStage);
       $("modal-eyebrow").textContent = "YOUR ISLAND JOURNEY";
@@ -136,13 +158,17 @@ export function createNavigation(context) {
               : "Back to your landscape"
             : "Start a fresh landscape";
       }
-      if (kind === "start" && saved && !saved.over)
+      if (kind === "start" && saved && !saved.over) {
         $("mode-picker").hidden = true;
+        if (!saved.campaign && !saved.growth)
+          copy.innerHTML +=
+            "<p>Your saved run keeps its original rules. Start fresh to grow through score chapters and earn rain charms.</p>";
+      }
     } else if (kind === "pause") {
       title.innerHTML = "A moment<br>of <em>calm.</em>";
       copy.innerHTML =
         "Your landscape is saved. The rain can wait." +
-        `<p class="record-history">Classic best ${best.classic.toLocaleString()} · Daydream best ${best.daydream.toLocaleString()}<br><small>Earlier rules: Classic ${legacyBest.classic.toLocaleString()} · Daydream ${legacyBest.daydream.toLocaleString()}</small></p>`;
+        `<p class="record-history">Classic best ${best.classic.toLocaleString()} · Daydream best ${best.daydream.toLocaleString()}<br><small>Earlier rules: Classic ${Math.max(legacyBest.classic, previousBest.classic).toLocaleString()} · Daydream ${Math.max(legacyBest.daydream, previousBest.daydream).toLocaleString()}</small></p>`;
       start.textContent = "Keep playing ↗";
       second.hidden = false;
       second.textContent = "Start a fresh landscape";
@@ -166,6 +192,9 @@ export function createNavigation(context) {
       b.setAttribute("aria-pressed", String(active));
     });
     context.update();
-    start.focus({ preventScroll: true });
+    (kind === "journal" ? $("journal-close") : start).focus({
+      preventScroll: true,
+    });
+    $("overlay").scrollTop = 0;
   };
 }

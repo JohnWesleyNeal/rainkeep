@@ -1,3 +1,4 @@
+import { createGrowth, advanceGrowth, validGrowth } from "./growth.js";
 import { createWeather, stepWeather, validWeather } from "./weather.js";
 import { drawQueuedPiece } from "./piece-queue.js";
 // Two terrain samples per old tile allow half-tile offsets and thin overlapping banks.
@@ -106,7 +107,7 @@ export function random(s) {
 export function piece(s, turn) {
   if (s.campaign?.queue?.length)
     return { ...s.campaign.queue[turn % s.campaign.queue.length] };
-  if (s.rulesVersion === 2) return drawQueuedPiece(s, turn);
+  if (s.rulesVersion >= 2) return drawQueuedPiece(s, turn);
   const opening = [5, 6, 5, 7, 5, 6, 5, 7, 5, 6, 5, 7];
   let type;
   if (turn < opening.length) type = "raise";
@@ -215,10 +216,10 @@ export function cells(p) {
 export function createGame(
   mode = "classic",
   seed = Date.now() >>> 0,
-  rulesVersion = 2,
+  rulesVersion = 3,
 ) {
   const s = {
-    version: rulesVersion === 2 ? 4 : 3,
+    version: rulesVersion >= 2 ? rulesVersion + 2 : 3,
     mode,
     seed,
     terrain: Array(SIZE * SIZE).fill(0),
@@ -246,8 +247,8 @@ export function createGame(
     notice: "",
     noticeUntil: 0,
   };
-  if (rulesVersion === 2) {
-    s.rulesVersion = 2;
+  if (rulesVersion >= 2) {
+    s.rulesVersion = rulesVersion;
     s.queueState = {
       seed: (seed ^ 0x9e3779b9) >>> 0,
       fireGap: 0,
@@ -262,9 +263,10 @@ export function createGame(
         s.terrain[i] = x < 10 || x > 21 || y < 10 || y > 21 ? 2.8 : 0;
         if (x >= 10 && x <= 21 && y >= 10 && y <= 21) s.water[i] = 1.1;
       }
+  if (rulesVersion === 3) s.growth = createGrowth();
   s.current = piece(s, 0);
   s.next = piece(s, 1);
-  if (rulesVersion === 2) s.upcoming = [s.next, piece(s, 2), piece(s, 3)];
+  if (rulesVersion >= 2) s.upcoming = [s.next, piece(s, 2), piece(s, 3)];
   return s;
 }
 export function validPlacement(p, x, y) {
@@ -625,7 +627,7 @@ export function applyPiece(s, x, y) {
   s.score += earned;
   s.turn++;
   s.current = s.next;
-  if (s.rulesVersion === 2 && !s.campaign) {
+  if (s.rulesVersion >= 2 && !s.campaign) {
     s.upcoming.shift();
     s.upcoming.push(piece(s, s.turn + 3));
     s.next = s.upcoming[0];
@@ -633,7 +635,7 @@ export function applyPiece(s, x, y) {
   s.remaining = fallDuration(s);
   s.altitude = SPAWN_ALTITUDE;
   s.dropping = false;
-  return {
+  const result = {
     type,
     piece: committedPiece,
     contactHeight,
@@ -660,6 +662,8 @@ export function applyPiece(s, x, y) {
       rainbow: bonus.rainbow ? 10 : 1,
     },
   };
+  advanceGrowth(s, result);
+  return result;
 }
 // Recovery requires a real, liquid enclosure, rather than merely adding land.
 export function containedLake(s, lake) {
@@ -693,6 +697,7 @@ function recoveryTick(s, dt) {
   if (r.stable >= 2 - 1e-8) {
     const earned = 500 * s.level;
     s.score += earned;
+    advanceGrowth(s);
     if (s.campaign) s.campaign.recoveries++;
     s.recovery = null;
     announce(s, `Back in balance! +${earned} recovery bonus.`);
@@ -762,6 +767,7 @@ export function freezeLake(s, x, y) {
   } else {
     const points = 250 * bonuses(s).multiplier;
     s.score += points;
+    advanceGrowth(s);
     announce(s, `Dry ice! +${points}`);
   }
 }
@@ -769,21 +775,33 @@ function events(s, dt) {
   if (!s.campaign?.lockIce)
     for (let i = 0; i < s.ice.length; i++)
       s.ice[i] = Math.max(0, s.ice[i] - dt);
+  advanceGrowth(s);
+  const timedLevel = 1 + Math.floor(s.elapsed / LEVEL_SECONDS);
   const level = s.campaign
     ? s.level
-    : Math.min(10, 1 + Math.floor(s.elapsed / LEVEL_SECONDS));
+    : Math.min(
+        10,
+        s.growth
+          ? Math.max(
+              s.growth.milestone + 1,
+              s.mode === "classic" ? timedLevel : 1,
+            )
+          : timedLevel,
+      );
   if (level > s.level) {
     if (bonuses(s).lakes >= 5) s.smartBombs = Math.min(9, s.smartBombs + 1);
     s.level = level;
     announce(
       s,
-      `Level ${level}. Faster falls${s.smartBombs ? " · Smart bomb ready" : ""}.`,
+      s.growth && s.mode === "daydream"
+        ? `Level ${level}. Richer water, bigger clears. Still at your pace.`
+        : `Level ${level}. Faster falls${s.smartBombs ? " · Smart bomb ready" : ""}.`,
     );
   }
   if (
     s.mode === "classic" &&
     s.elapsed > 55 &&
-    s.turn >= (s.rulesVersion === 2 ? 9 : 12)
+    s.turn >= (s.rulesVersion >= 2 ? 9 : 12)
   ) {
     if (!s.weather) s.weather = createWeather("classic");
   }
@@ -833,6 +851,7 @@ export function tick(s, dt, aim = s.aim || { x: 8, y: 8 }) {
   events(s, dt);
   flow(s, dt);
   recoveryTick(s, dt);
+  advanceGrowth(s);
   if (s.over || !validPlacement(s.current, aim.x, aim.y)) return;
   if (s.mode === "classic" || s.campaign?.falling || s.dropping) {
     const contact = landingHeight(s, aim),
@@ -864,7 +883,7 @@ export function restore(raw) {
           p.waterSize <= 2));
     if (
       !s ||
-      ![1, 2, 3, 4].includes(s.version) ||
+      ![1, 2, 3, 4, 5].includes(s.version) ||
       !["classic", "daydream"].includes(s.mode) ||
       !Number.isInteger(s.seed) ||
       !finite(s.seed, 0, 4294967295) ||
@@ -981,9 +1000,9 @@ export function restore(raw) {
       )
     )
       return null;
-    if (s.version === 4) {
+    if (s.version >= 4) {
       if (
-        s.rulesVersion !== 2 ||
+        s.rulesVersion !== s.version - 2 ||
         s.campaign ||
         !s.queueState ||
         !Number.isInteger(s.queueState.seed) ||
@@ -1003,6 +1022,9 @@ export function restore(raw) {
       delete s.queueState;
       delete s.upcoming;
     }
+    if (s.version === 5) {
+      if (!validGrowth(s.growth, s.score, s.turn)) return null;
+    } else delete s.growth;
     if (
       s.campaign !== undefined &&
       (!Number.isInteger(s.campaign.id) ||

@@ -2,6 +2,16 @@
 
 A cozy, skillful water-and-terrain puzzle for phones and desktop. Shape banks, catch water, and evaporate connected lakes for points and drain relief. Original name, artwork, sound, and implementation, inspired by the landscape puzzles of the 1990s.
 
+## Grow a living haven
+
+New Classic and Daydream runs grow through seven score chapters: a little beginning, wildflower banks, reed gardens, willow groves, lantern cove, blossom haven, and Rainkeeper haven. Milestones arrive at 1,500, 5,000, 12,000, 24,000, 42,000 and 70,000 points, followed by another season every 50,000 points. A visible meter always shows the next target.
+
+Each milestone banks a **rain charm**. Use it to clear up to 25% of the drain while keeping the landscape and queue intact. Hold up to three; unused charms belong to the current run. They cannot revive a failed run, and an empty drain never spends one. Classic's level follows the higher of its score chapter and elapsed-time level, introducing ice at level 2 and mines at level 4. Daydream grows only with score and retains its waiting pieces and lack of timed hazards.
+
+Your **Keeper Journal** persists across runs. Best free-play scores earn one growth per 20 points, each best island medal earns 150, and each of ten field discoveries earns 200. These are permanent records: replaying or reloading the same achievement does not award it again. Existing scores and medals contribute automatically. Ranks grow your decorative shore from flowers to reeds, groves, lanterns, blossoms and floating starlight. Garden shelves stay outside the playable field, and new runs retain the scenery earned by your Keeper rank.
+
+Open the journal from the score row or the start/pause menu. It pauses play, shows the next rank and reward, and records discoveries such as careful clear chains, duck bonuses, repairs, thawing and kept showers. Every island and mode remains open immediately.
+
 ## Play your way
 
 - **Island journey:** all sixteen islands are available immediately. First Pond is the recommended beginning; Home teaches the rules, Meadow adds showers, and Practice Coves offer advanced challenges. The suggested route and medals guide exploration without locks.
@@ -41,7 +51,7 @@ Meadow weather normally cycles through clear preparation, eight seconds of gathe
 
 Runs, medals, best scores, sound, and guide preferences save in this browser. No accounts, analytics, or remote saves. Leaving the tab pauses; graphics loss pauses and saves. The offline service worker and home-screen manifest support installed/offline play.
 
-Fresh free-play runs use version 4 saves with a persisted upcoming queue and its own generator state. Earlier runs continue with their original rules and one truthful upcoming piece. Version 1/2 terrain migration remains supported. Historical best scores stay in their existing key and are displayed in Pause alongside new-rule records. Campaign stage identities and all existing medals are preserved.
+Fresh free-play runs use version 5 saves with persisted chapter progress, earned/spent charms, clear-chain records, and the independent three-piece queue. Version 4 runs retain their original balance and three-piece queue; earlier runs retain their original rules and one truthful upcoming piece. Version 1/2 terrain migration remains supported. New progression runs have separate best scores. Historical records stay in their existing keys, appear in Pause, and contribute to Keeper growth. Campaign stage identities and all existing medals are preserved.
 
 WebGL renders the miniature island, terrain, water, ducks, weather and feedback. `?graphics=canvas` selects the simpler Canvas fallback. Reduced motion removes extra animation. All imagery and sound are local; procedural audio respects pause and mute. [Art notes](ART.md) and [validation history](VALIDATION.md) describe the implementation.
 
