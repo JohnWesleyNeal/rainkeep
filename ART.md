@@ -1,5 +1,9 @@
 # Rainkeep art
 
+## Landing preview correction (2.1.1)
+
+The landing marker follows the current terrain as one continuous footprint, with a quiet fill and an outer contour in the piece's color. Fractional steering retains the exact piece silhouette, including open centers; it no longer expands into whole affected cells or draws floating future-height steps and corner posts. Geometry is split at the terrain's triangle boundaries so the marker follows bank slopes without cutting through them. Fire retains the full affected-lake highlight, and written outcome/risk predictions still come from the real simulation. The lesson circle yields when the aimed piece reaches its area, then returns when the player moves away. Canvas uses the same footprint and guidance behavior against its simpler bank geometry. No new assets are required.
+
 ## A living haven (2.1)
 
 Permanent Keeper ranks and current-run score chapters grow four small floating garden shelves beyond the playable terrain. Wildflowers, reeds, willow crowns, warm lanterns, blossom canopies and suspended golden lights use fixed instanced meshes and shared geometry. They never change collision, terrain, water or the placement footprint. The higher of earned Keeper rank and current chapter determines the visible growth. Reduced motion makes arrival immediate and stops the gentle shelf movement; Canvas includes simplified matching shelves and plants.

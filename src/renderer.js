@@ -22,8 +22,12 @@ import { drawWaterBubble } from "./bubble-canvas.js";
 import { addIslandBody, solidFootprint } from "./diorama.js";
 import { createWeatherVisual, drawCanvasWeather } from "./weather-visual.js";
 import { weatherView } from "./weather.js";
-import { createLandingGhost, ghostColors } from "./landing-ghost.js";
-import { previewSurface } from "./placement-preview.js";
+import { createLandingGhost } from "./landing-ghost.js";
+import {
+  landingColor,
+  landingFootprint,
+  showLessonTarget,
+} from "./landing-footprint.js";
 
 const HALF = SIZE / 2;
 const palette = {
@@ -1159,7 +1163,6 @@ export function createWorldRenderer(canvas, reduced = false) {
       dirty = false;
     }
     updatePiece(s.current);
-    landingGhost.update(s, options.placement, options.showPiece && !s.over);
     if (s.turn !== lastPieceTurn) {
       lastPieceTurn = s.turn;
       arrivedAt = time;
@@ -1239,9 +1242,16 @@ export function createWorldRenderer(canvas, reduced = false) {
       targetPositions.setXYZ(v, x - HALF, surfaceAt(x, y) + 0.045, y - HALF);
     }
     targetPositions.needsUpdate = true;
+    landingGhost.update(
+      s,
+      options.placement,
+      aim,
+      options.showPiece && !s.over,
+      surfaceAt,
+    );
     const focus = options.lessonTarget;
-    lessonHalo.visible = !!focus;
-    if (focus) {
+    lessonHalo.visible = showLessonTarget(s, aim, focus, options.showPiece);
+    if (lessonHalo.visible) {
       for (let i = 0; i < lessonPositions.count; i++) {
         const angle = (i / lessonPositions.count) * Math.PI * 2;
         const x = focus.x + Math.cos(angle) * focus.radius;
@@ -1542,6 +1552,7 @@ export function createWorldRenderer(canvas, reduced = false) {
 
 // The same continuous simulation remains playable on devices without WebGL.
 function createCanvasRenderer(canvas, reduced = false) {
+  let lastPreview, footprint, lastAimX, lastAimY;
   const ctx = canvas.getContext("2d");
   let width,
     height,
@@ -1796,7 +1807,7 @@ function createCanvasRenderer(canvas, reduced = false) {
         ctx.fill();
       }
     }
-    if (o.lessonTarget) {
+    if (showLessonTarget(s, aim, o.lessonTarget, o.showPiece)) {
       const focus = o.lessonTarget;
       ctx.strokeStyle = "#d8eeb3";
       ctx.lineWidth = Math.max(1.3, unit * 0.12);
@@ -1828,37 +1839,55 @@ function createCanvasRenderer(canvas, reduced = false) {
         radius: Math.max(20, (w + h) * unit * 0.5),
       };
       if (o.placement) {
-        const preview = o.placement,
-          selected = new Set(preview.indices);
-        for (const i of selected) {
-          const x = i % SIZE,
-            y = Math.floor(i / SIZE),
-            z = previewSurface(s, preview, i);
-          const corners = [
-            project(x, y, z),
-            project(x + 1, y, z),
-            project(x + 1, y + 1, z),
-            project(x, y + 1, z),
-          ];
-          ctx.globalAlpha = 0.32;
-          polygon(corners, ghostColors[preview.kind]);
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = ghostColors[preview.kind];
-          ctx.lineWidth = 1.5;
-          const neighbors = [
-            i - SIZE,
-            x === SIZE - 1 ? -1 : i + 1,
-            i + SIZE,
-            x === 0 ? -1 : i - 1,
-          ];
-          for (let n = 0; n < 4; n++)
-            if (!selected.has(neighbors[n])) {
-              ctx.beginPath();
-              ctx.moveTo(...corners[n]);
-              ctx.lineTo(...corners[(n + 1) % 4]);
-              ctx.stroke();
-            }
+        const preview = o.placement;
+        if (preview !== lastPreview || aim.x !== lastAimX || aim.y !== lastAimY) {
+          footprint = landingFootprint(s, preview, aim);
+          lastPreview = preview;
+          lastAimX = aim.x;
+          lastAimY = aim.y;
         }
+        const surface = (x, y) => {
+          const i = Math.min(SIZE - 1, Math.max(0, Math.floor(y))) * SIZE +
+            Math.min(SIZE - 1, Math.max(0, Math.floor(x)));
+          return s.terrain[i] + s.water[i] + 0.055;
+        };
+        // One path/fill avoids seams where adjacent triangles meet.
+        ctx.beginPath();
+        for (let n = 0; n < footprint.faces.length; n += 6) {
+          const height = surface(
+            (footprint.faces[n] + footprint.faces[n + 2] + footprint.faces[n + 4]) / 3,
+            (footprint.faces[n + 1] + footprint.faces[n + 3] + footprint.faces[n + 5]) / 3,
+          );
+          for (let k = 0; k < 6; k += 2) {
+            const x = footprint.faces[n + k], y = footprint.faces[n + k + 1];
+            const p = project(x, y, height);
+            if (k) ctx.lineTo(...p);
+            else ctx.moveTo(...p);
+          }
+          ctx.closePath();
+        }
+        ctx.fillStyle = landingColor(s, preview);
+        ctx.globalAlpha = 0.2;
+        ctx.fill();
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = landingColor(s, preview);
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        for (let n = 0; n < footprint.edges.length; n += 4) {
+          const height = surface(
+            (footprint.edges[n] + footprint.edges[n + 2]) / 2,
+            (footprint.edges[n + 1] + footprint.edges[n + 3]) / 2,
+          );
+          for (let k = 0; k < 4; k += 2) {
+            const x = footprint.edges[n + k], y = footprint.edges[n + k + 1];
+            const p = project(x, y, height);
+            if (k) ctx.lineTo(...p);
+            else ctx.moveTo(...p);
+          }
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
       }
       if (["raise", "lower"].includes(s.current.type)) {
         for (const [dx, dy] of cells(s.current))

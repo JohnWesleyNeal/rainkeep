@@ -1,13 +1,7 @@
 import * as THREE from "three";
 import { SIZE } from "./simulation.js";
-import { previewSurface } from "./placement-preview.js";
+import { landingColor, landingFootprint } from "./landing-footprint.js";
 
-export const ghostColors = {
-  safe: "#c3e4a7",
-  water: "#9de2e6",
-  caution: "#efc581",
-  danger: "#f09170",
-};
 export function createLandingGhost(scene) {
   const faces = new THREE.BufferGeometry(),
     edges = new THREE.BufferGeometry();
@@ -27,7 +21,7 @@ export function createLandingGhost(scene) {
     faces,
     new THREE.MeshBasicMaterial({
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.2,
       depthWrite: false,
       side: THREE.DoubleSide,
     }),
@@ -36,7 +30,7 @@ export function createLandingGhost(scene) {
     edges,
     new THREE.LineBasicMaterial({
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.9,
       depthWrite: false,
     }),
   );
@@ -44,58 +38,35 @@ export function createLandingGhost(scene) {
   fill.renderOrder = 5;
   outline.renderOrder = 6;
   scene.add(fill, outline);
-  let previous;
+  let previous, geometry, lastX, lastY;
   return {
-    update(s, p, visible) {
+    update(s, p, aim, visible, surfaceAt) {
       fill.visible = outline.visible = !!(visible && p);
-      if (!visible || !p || p === previous) return;
-      previous = p;
-      fill.material.color.set(ghostColors[p.kind]);
-      outline.material.color.set(ghostColors[p.kind]);
-      let f = 0,
-        e = 0;
-      const set = new Set(p.indices);
-      for (const i of set) {
-        const x = (i % SIZE) - 16,
-          y = Math.floor(i / SIZE) - 16,
-          z = previewSurface(s, p, i);
-        const points = [
-          [x, z, y],
-          [x + 1, z, y],
-          [x + 1, z, y + 1],
-          [x, z, y + 1],
-        ];
-        for (const n of [0, 2, 1, 0, 3, 2])
-          facePoints.setXYZ(f++, ...points[n]);
-        const neighbors = [
-          i - SIZE,
-          i % SIZE === SIZE - 1 ? -1 : i + 1,
-          i + SIZE,
-          i % SIZE === 0 ? -1 : i - 1,
-        ];
-        for (let n = 0; n < 4; n++)
-          if (!set.has(neighbors[n])) {
-            const a = points[n],
-              b = points[(n + 1) % 4];
-            edgePoints.setXYZ(e++, ...a);
-            edgePoints.setXYZ(e++, ...b);
-            const ground = s.terrain[i] + 0.05;
-            if (
-              !set.has(neighbors[(n + 3) % 4]) &&
-              Math.abs(z - ground) > 0.2 &&
-              ["raise", "lower"].includes(s.current.type)
-            ) {
-              edgePoints.setXYZ(e++, ...a);
-              edgePoints.setXYZ(e++, a[0], ground, a[2]);
-            }
-          }
+      if (!visible || !p) return;
+      if (p !== previous || lastX !== aim.x || lastY !== aim.y) {
+        geometry = landingFootprint(s, p, aim);
+        previous = p;
+        lastX = aim.x;
+        lastY = aim.y;
+        fill.material.color.set(landingColor(s, p));
+        outline.material.color.copy(fill.material.color);
+        faces.setDrawRange(0, geometry.faces.length / 2);
+        edges.setDrawRange(0, geometry.edges.length / 2);
       }
-      faces.setDrawRange(0, f);
-      edges.setDrawRange(0, e);
-      facePoints.needsUpdate = edgePoints.needsUpdate = true;
+      for (const [points, buffer] of [
+        [geometry.faces, facePoints],
+        [geometry.edges, edgePoints],
+      ]) {
+        for (let n = 0; n < points.length; n += 2) {
+          const x = points[n],
+            y = points[n + 1];
+          buffer.setXYZ(n / 2, x - SIZE / 2, surfaceAt(x, y) + 0.055, y - SIZE / 2);
+        }
+        buffer.needsUpdate = true;
+      }
     },
     get cells() {
-      return faces.drawRange.count / 6;
+      return previous?.indices.length || 0;
     },
   };
 }

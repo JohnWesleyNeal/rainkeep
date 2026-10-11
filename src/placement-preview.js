@@ -101,12 +101,3 @@ export function previewPlacement(s, aim) {
     delta: Math.round((risk.projected - risk.current) * 100),
   };
 }
-
-export function previewSurface(s, preview, i) {
-  const type = s.current.type;
-  return (
-    (["raise", "lower"].includes(type) && !preview.event.quake
-      ? preview.terrain[i]
-      : s.terrain[i] + s.water[i]) + 0.08
-  );
-}

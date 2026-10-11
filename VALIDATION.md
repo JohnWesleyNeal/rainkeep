@@ -1,5 +1,13 @@
 # Rainkeep validation
 
+## Landing preview correction — 2.1.1
+
+Version 2.1.1, validated on 2026-10-10. The terrain-following placement silhouette replaces the fragmented future-height cell preview. Exact fractional piece boundaries and open centers remain visible, colors follow the active piece, and the lesson ring hides while the piece overlaps its target. Fire retains its connected-lake area. Outcome descriptions, pressure prediction, simulation rules, progression and saved data are unchanged.
+
+122 unit tests pass. New geometry checks cover every land/water shape and rotation at integral, fractional and near-integral coordinates; exact footprint area and perimeter; preserved open centers; triangles staying within the displayed terrain's faces; whole-board buffer bounds; and contextual lesson-ring visibility. The compiled browser suite passes 434 checks with no exceptions, including real stage completion, repair, progression, touch steering, offline reload and graphics restoration. Seven focused development checks cover six scenes across four camera angles, stable GPU resources, and guidance disappearing on target and returning when steering away.
+
+Before/after screenshots of the same fractional First Pond landing were inspected at 1440 × 900 and 390 × 650, alongside Canvas and phone views of open-center pieces, repair holes, Downers on peaks, Water, frozen lakes and mines. Artifacts are under ignored `output/playwright/preview-fix/`. These are desktop Chromium and emulated-phone checks; visual preference remains a user judgment.
+
 ## A living haven — 2.1
 
 Version 2.1.0, validated on 2026-10-10. New free-play runs grow through seven score chapters, then repeating seasons. Milestones bank up to three rain charms; each clears up to 160 drain (25% capacity), spending only when there is real drain to remove. Charms cannot be used during a drop or after failure, and never alter the board or queue. Classic levels advance with score chapters or time; Daydream levels advance with score while retaining suspended pieces and no timed hazards. Version 5 saves retain chapters, earned/spent rewards, contained clears, water and best clear chain. Version 4 and earlier runs continue with their existing balance and previews. New-rule best scores use a separate key.
